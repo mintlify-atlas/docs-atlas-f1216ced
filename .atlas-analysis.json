@@ -1,0 +1,142 @@
+{
+  "projectType": "saas",
+  "projectName": "Sunschool",
+  "projectDescription": "An AI-powered adaptive tutor that meets kids where they are with personalized lessons, quizzes, and gamification.",
+  "theme": "almond",
+  "primaryColor": "#4A90D9",
+  "lightColor": "#FFD93D",
+  "darkColor": "#2C5F8D",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Get Started",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "Setup",
+            "pages": ["installation", "configuration", "first-steps"]
+          }
+        ]
+      },
+      {
+        "tab": "For Parents",
+        "groups": [
+          {
+            "group": "Parent Guide",
+            "pages": ["parents/overview", "parents/dashboard", "parents/adding-children"]
+          },
+          {
+            "group": "Managing Learning",
+            "pages": ["parents/progress-tracking", "parents/rewards-system", "parents/learning-goals"]
+          },
+          {
+            "group": "Advanced",
+            "pages": ["parents/database-sync", "parents/data-export"]
+          }
+        ]
+      },
+      {
+        "tab": "For Learners",
+        "groups": [
+          {
+            "group": "Learning Experience",
+            "pages": ["learners/overview", "learners/lessons", "learners/quizzes"]
+          },
+          {
+            "group": "Gamification",
+            "pages": ["learners/achievements", "learners/points-rewards", "learners/goals"]
+          },
+          {
+            "group": "Progress",
+            "pages": ["learners/knowledge-graph", "learners/concept-mastery"]
+          }
+        ]
+      },
+      {
+        "tab": "Features",
+        "groups": [
+          {
+            "group": "Core Features",
+            "pages": ["features/ai-tutoring", "features/adaptive-learning", "features/grade-levels"]
+          },
+          {
+            "group": "Gamification",
+            "pages": ["features/points-system", "features/achievements", "features/rewards"]
+          },
+          {
+            "group": "Analytics",
+            "pages": ["features/concept-tracking", "features/mastery-system", "features/reports"]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": ["api/authentication", "api/user-management"]
+          },
+          {
+            "group": "Learners & Lessons",
+            "pages": ["api/learners", "api/lessons", "api/quizzes"]
+          },
+          {
+            "group": "Gamification",
+            "pages": ["api/points", "api/achievements", "api/rewards"]
+          },
+          {
+            "group": "Analytics",
+            "pages": ["api/progress", "api/reports", "api/export"]
+          }
+        ]
+      },
+      {
+        "tab": "Self-Hosting",
+        "groups": [
+          {
+            "group": "Deployment",
+            "pages": ["self-hosting/overview", "self-hosting/requirements", "self-hosting/environment"]
+          },
+          {
+            "group": "Configuration",
+            "pages": ["self-hosting/database", "self-hosting/ai-providers", "self-hosting/security"]
+          },
+          {
+            "group": "Operations",
+            "pages": ["self-hosting/migrations", "self-hosting/monitoring", "self-hosting/troubleshooting"]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-powered adaptive lessons with grade-specific content (K-12)",
+    "Multi-role system (Admin, Parent, Learner) with parent dashboards",
+    "Gamification with points, achievements, and parent-managed rewards",
+    "Concept mastery tracking with spaced repetition",
+    "Real-time progress monitoring and analytics",
+    "SVG illustration generation for educational content",
+    "Parent-as-learner mode to preview child experience",
+    "Database sync for external data backup",
+    "Open source AI prompts for transparency"
+  ],
+  "publicApiSurface": [
+    "POST /register - User registration",
+    "POST /login - User authentication",
+    "GET /api/learners - List learners for parent",
+    "POST /api/learners - Create new learner",
+    "POST /api/lessons/create - Generate AI lesson",
+    "GET /api/lessons/active - Get active lesson",
+    "POST /api/lessons/:lessonId/answer - Submit quiz answers",
+    "GET /api/learner/:learnerId/concept-performance - Concept mastery data",
+    "GET /api/points/balance - Learner point balance",
+    "POST /api/rewards/redeem/:rewardId - Redeem reward",
+    "GET /api/achievements - User achievements",
+    "GET /api/reports - Progress reports",
+    "GET /api/export - Export learner data",
+    "POST /api/sync-configs - Configure database sync"
+  ]
+}
