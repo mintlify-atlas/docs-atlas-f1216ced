@@ -1,0 +1,250 @@
+---
+title: 'Progress & Settings'
+description: 'Track learner progress and manage settings'
+icon: 'chart-line'
+---
+
+## Get Learner Settings
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/learner-settings/:learnerId
+curl -X GET https://api.sunschool.xyz/api/learner-settings/3 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="learnerId" type="number" required>
+  Learner user ID
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "doubleOrLossEnabled": false
+}
+```
+
+<ResponseField name="doubleOrLossEnabled" type="boolean">
+  Whether double-or-loss mode is enabled for this learner
+</ResponseField>
+
+---
+
+## Update Double-or-Loss Setting
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash PUT /api/learner-settings/:learnerId/double-or-loss
+curl -X PUT https://api.sunschool.xyz/api/learner-settings/3/double-or-loss \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true
+  }'
+```
+
+<ParamField path="learnerId" type="number" required>
+  Learner user ID
+</ParamField>
+
+<ParamField body="enabled" type="boolean" required>
+  Enable or disable double-or-loss mode
+</ParamField>
+
+<Note>
+  Double-or-loss mode allows learners to risk their points for higher rewards on quiz questions.
+</Note>
+
+### Response
+
+```json
+{
+  "learnerId": 3,
+  "doubleOrLossEnabled": true
+}
+```
+
+---
+
+## Activities (Legacy Rewards)
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/activities
+curl -X GET https://api.sunschool.xyz/api/activities \
+  -H "Authorization: Bearer {token}"
+```
+
+Returns the list of active activities (legacy rewards catalog).
+
+### Response
+
+```json Response Example
+[
+  {
+    "id": "activity_1",
+    "name": "Reading Time",
+    "description": "30 minutes of reading",
+    "category": "Educational",
+    "isActive": true
+  }
+]
+```
+
+---
+
+## Allocate Tokens to Activities
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash POST /api/awards/allocate
+curl -X POST https://api.sunschool.xyz/api/awards/allocate \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "allocations": [
+      {"activityId": "activity_1", "tokens": 5},
+      {"activityId": "activity_2", "tokens": 3}
+    ]
+  }'
+```
+
+<ParamField body="allocations" type="array" required>
+  Array of allocation objects with activityId and tokens
+</ParamField>
+
+### Response
+
+```json
+{
+  "awards": [
+    {
+      "id": "award_1",
+      "activityId": "activity_1",
+      "tokens": 5,
+      "status": "PENDING"
+    }
+  ]
+}
+```
+
+### Error Codes
+
+- **400** - allocations must be an array
+- **400** - Not enough tokens (INSUFFICIENT_TOKENS)
+- **500** - Server error
+
+---
+
+## Cash In Award
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash POST /api/awards/:awardId/cash-in
+curl -X POST https://api.sunschool.xyz/api/awards/award_1/cash-in \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="awardId" type="string" required>
+  Award ID to cash in
+</ParamField>
+
+### Response
+
+```json
+{
+  "status": "OK"
+}
+```
+
+---
+
+## Toggle Award Sharing
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash POST /api/awards/:awardId/share
+curl -X POST https://api.sunschool.xyz/api/awards/award_1/share \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "active": true,
+    "title": "My Achievement",
+    "description": "I earned this award!"
+  }'
+```
+
+<ParamField path="awardId" type="string" required>
+  Award ID to share
+</ParamField>
+
+<ParamField body="active" type="boolean" required>
+  Enable or disable sharing
+</ParamField>
+
+<ParamField body="title" type="string">
+  Share title
+</ParamField>
+
+<ParamField body="description" type="string">
+  Share description
+</ParamField>
+
+### Response
+
+```json
+{
+  "shareUrl": "https://app.sunschool.xyz/users/alice-123456/award/abc123hash"
+}
+```
+
+---
+
+## Get Public Award Share
+
+<Note>
+  **No Authentication Required** - Public endpoint
+</Note>
+
+```bash GET /users/:username/award/:hash
+curl -X GET https://api.sunschool.xyz/users/alice-123456/award/abc123hash
+```
+
+<ParamField path="username" type="string" required>
+  Username of the award owner
+</ParamField>
+
+<ParamField path="hash" type="string" required>
+  Unique share hash
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "username": "alice-123456",
+  "title": "My Achievement",
+  "description": "I earned this award!",
+  "awardId": "award_1",
+  "activityName": "Reading Time",
+  "tokens": 5,
+  "sharedAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Error Codes
+
+- **404** - Not found (share doesn't exist or is not active)

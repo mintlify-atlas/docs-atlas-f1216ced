@@ -1,0 +1,179 @@
+---
+title: Self-Hosting Overview
+description: Deploy and manage your own Sunschool instance
+icon: server
+---
+
+## Why Self-Host?
+
+Sunschool is open source and designed for easy self-hosting, giving you complete control over your educational platform:
+
+<CardGroup cols={2}>
+  <Card title="Data Ownership" icon="shield-check">
+    Your data stays on your infrastructure. Nothing gets sold or used to train external models.
+  </Card>
+  <Card title="Privacy Control" icon="lock">
+    Keep sensitive student information in your own environment with full audit capability.
+  </Card>
+  <Card title="Customization" icon="code">
+    Modify prompts, features, and workflows to match your educational philosophy.
+  </Card>
+  <Card title="Transparency" icon="eye">
+    Read the code, audit the AI prompts, and verify exactly how the system works.
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+Sunschool uses a modern, production-ready stack:
+
+```
+client/          React 19 frontend (Vite)
+server/          Express.js 5 API with JWT auth
+shared/          TypeScript schemas and types
+drizzle/         Database migration files
+scripts/         Utility and admin scripts
+tests/           Playwright e2e tests
+```
+
+### Technology Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 19 + TypeScript, React Native Web, React Query, Wouter, Vite |
+| **Backend** | Node.js 22, Express.js 5, JWT auth, Drizzle ORM |
+| **Database** | PostgreSQL (Neon serverless compatible) |
+| **AI** | OpenRouter API (primary), Bittensor Subnet 1 (experimental), Perplexity API |
+| **Deployment** | Railway (auto-deploy), Docker-ready |
+| **Testing** | Jest (unit), Playwright (e2e) |
+
+## Deployment Options
+
+### Cloud Platforms
+
+<AccordionGroup>
+  <Accordion title="Railway (Recommended)">
+    Railway provides zero-config deployment with automatic builds:
+    
+    - Auto-deploy on push to `main` branch
+    - Built-in PostgreSQL database
+    - Health check monitoring at `/api/healthcheck`
+    - Uses NIXPACKS builder (Node 22)
+    - Production config in `railway.json` and `nixpacks.toml`
+    
+    See the [official deployment guide](/self-hosting/overview) for Railway setup.
+  </Accordion>
+  
+  <Accordion title="Vercel / Netlify">
+    Deploy the frontend static build:
+    
+    ```bash
+    npm run build
+    # Outputs to client/dist/
+    ```
+    
+    Point your serverless functions to the backend or deploy separately.
+  </Accordion>
+  
+  <Accordion title="Docker">
+    Build and run with Docker:
+    
+    ```bash
+    docker build -t sunschool .
+    docker run -p 5000:5000 --env-file .env sunschool
+    ```
+    
+    Requires PostgreSQL database accessible from container.
+  </Accordion>
+  
+  <Accordion title="VPS (DigitalOcean, Linode, etc.)">
+    Install Node.js 22, PostgreSQL, and run:
+    
+    ```bash
+    npm install
+    npm run build
+    npm start
+    ```
+    
+    Use PM2 or systemd for process management.
+  </Accordion>
+</AccordionGroup>
+
+### Local Development
+
+For development and testing:
+
+```bash
+git clone https://github.com/allonethingxyz/sunschool.git
+cd sunschool
+npm install
+
+# Create .env file (see Environment Configuration)
+cp .env.example .env
+
+# Run in development mode
+npm run dev
+```
+
+Development server runs at `http://localhost:5000` with hot reload.
+
+## System Requirements
+
+<Warning>
+  **Minimum requirements** - For production deployments, see the [Requirements](/self-hosting/requirements) page.
+</Warning>
+
+- **Node.js**: v20+ (v22 recommended)
+- **PostgreSQL**: 12+ (Neon serverless supported)
+- **npm**: 8+
+- **Memory**: 512MB minimum (2GB+ recommended)
+- **Storage**: 1GB+ for application and database
+
+## Key Features
+
+### AI-Powered Learning
+
+- **Grade-specific prompts** - K-2, 3-4, 5-6, 7-8, 9+ with reading level validation
+- **Multi-provider AI** - OpenRouter primary with Bittensor fallback
+- **SVG illustrations** - LLM-generated educational graphics via Gemini 3.1
+- **Adaptive quizzes** - Concept mastery tracking with spaced repetition
+
+### Security & Authentication
+
+- **JWT-based auth** - Secure token-based authentication
+- **Role-based access** - Admin, Parent, and Learner roles
+- **Password hashing** - scrypt with salt for secure storage
+- **First user admin** - Automatic admin promotion for initial user
+
+### Data Management
+
+- **Auto migrations** - Schema updates run on server startup
+- **External sync** - Optional PostgreSQL backup connections
+- **Data export** - Full data export capability for parents/admins
+- **Privacy-first** - No external tracking or data sharing
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="System Requirements" icon="server" href="/self-hosting/requirements">
+    Verify your environment meets the prerequisites
+  </Card>
+  <Card title="Environment Setup" icon="gear" href="/self-hosting/environment">
+    Configure environment variables and API keys
+  </Card>
+  <Card title="Database Setup" icon="database" href="/self-hosting/database">
+    Initialize PostgreSQL and run migrations
+  </Card>
+  <Card title="Security" icon="shield" href="/self-hosting/security">
+    Implement authentication and access controls
+  </Card>
+</CardGroup>
+
+## Support
+
+<Info>
+  For issues or questions:
+  - [GitHub Issues](https://github.com/allonethingxyz/sunschool/issues)
+  - [Contributing Guide](https://github.com/allonethingxyz/sunschool#contributing)
+  - [All One Thing Labs](https://allonething.xyz)
+</Info>

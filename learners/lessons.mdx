@@ -1,0 +1,337 @@
+---
+title: Lessons Experience
+description: How personalized lessons are generated with grade-specific content and adaptive difficulty
+icon: book-open
+---
+
+## How Lessons Are Generated
+
+Every lesson in Sunschool is **dynamically generated** using AI to match the learner's grade level, subject preferences, and learning history.
+
+### Lesson Generation Flow
+
+```typescript
+// From learner-home.tsx:126-139
+const generateLessonMutation = useMutation({
+  mutationFn: (data: { 
+    learnerId: number, 
+    topic: string, 
+    gradeLevel: number, 
+    subject: string, 
+    category: string, 
+    difficulty: 'beginner' | 'intermediate' | 'advanced' 
+  }) => {
+    return apiRequest('POST', '/api/lessons/create', data).then(res => res.data);
+  },
+  retry: 2,
+  retryDelay: 1000,
+```
+
+<Note>
+Lesson generation includes automatic retry with exponential backoff to ensure reliable content delivery.
+</Note>
+
+### Enhanced Lesson Service
+
+Lessons are generated using the `generateEnhancedLesson` function from `enhanced-lesson-service.ts`:
+
+```typescript
+// From enhanced-lesson-service.ts:222-228
+export async function generateEnhancedLesson(
+  gradeLevel: number,
+  topic: string,
+  withImages: boolean = true,
+  subject?: string,
+  difficulty: 'beginner' | 'intermediate' | 'advanced' = 'beginner'
+): Promise<EnhancedLessonSpec | null>
+```
+
+## Grade-Specific Content
+
+Sunschool automatically adjusts content complexity, vocabulary, and structure based on grade level.
+
+### Grade Level Ranges
+
+<AccordionGroup>
+  <Accordion title="K-2 (Early Elementary)">
+    **Word Limits**: 75 words total
+    - Introduction: 15 words max
+    - Key concepts: 20 words max  
+    - Examples: 20 words max
+    - Practice: 15 words max
+    - Summary: 5 words max
+    
+    **Sentence Length**: Maximum 5 words per sentence
+    
+    **Reading Level**: Very simple vocabulary, short sentences, concrete examples
+    
+    ```typescript
+    // From enhanced-lesson-service.ts:96
+    if (gradeLevel <= 2) return { 
+      total: 75, 
+      introduction: 15, 
+      key_concepts: 20, 
+      examples: 20, 
+      practice: 15, 
+      summary: 5, 
+      sentenceMax: 5 
+    };
+    ```
+  </Accordion>
+
+  <Accordion title="3-4 (Middle Elementary)">
+    **Word Limits**: 200 words total
+    - Introduction: 30 words
+    - Key concepts: 70 words
+    - Examples: 50 words
+    - Practice: 35 words
+    - Summary: 15 words
+    
+    **Sentence Length**: Maximum 8 words per sentence
+    
+    **Reading Level**: Simple vocabulary with some academic terms introduced
+  </Accordion>
+
+  <Accordion title="5-6 (Upper Elementary)">
+    **Word Limits**: 400 words total
+    - Introduction: 60 words
+    - Key concepts: 160 words
+    - Examples: 100 words
+    - Practice: 60 words
+    - Summary: 20 words
+    
+    **Sentence Length**: Maximum 12 words per sentence
+    
+    **Reading Level**: More complex vocabulary, longer explanations
+  </Accordion>
+
+  <Accordion title="7-8 (Middle School)">
+    **Word Limits**: 700 words total
+    - Introduction: 100 words
+    - Key concepts: 280 words
+    - Examples: 170 words
+    - Practice: 100 words
+    - Summary: 50 words
+    
+    **Sentence Length**: Maximum 18 words per sentence
+    
+    **Reading Level**: Academic vocabulary, abstract concepts
+  </Accordion>
+
+  <Accordion title="9+ (High School)">
+    **Word Limits**: 1200 words total
+    - Introduction: 150 words
+    - Key concepts: 500 words
+    - Examples: 300 words
+    - Practice: 150 words
+    - Summary: 100 words
+    
+    **Sentence Length**: Maximum 25 words per sentence
+    
+    **Reading Level**: Advanced vocabulary, complex reasoning
+  </Accordion>
+</AccordionGroup>
+
+## Adaptive Difficulty
+
+Lessons can be generated at three difficulty levels:
+
+<Tabs>
+  <Tab title="Beginner">
+    - Foundational concepts
+    - Step-by-step explanations
+    - Heavy use of concrete examples
+    - Visual metaphors (e.g., pizza slices for fractions)
+  </Tab>
+  
+  <Tab title="Intermediate">
+    - Building on basics
+    - Some abstract thinking required
+    - Multiple examples with variations
+    - Connections between concepts
+  </Tab>
+  
+  <Tab title="Advanced">
+    - Complex problem-solving
+    - Abstract reasoning
+    - Real-world applications
+    - Critical thinking challenges
+  </Tab>
+</Tabs>
+
+## Lesson Structure
+
+Every enhanced lesson follows a consistent 5-section structure:
+
+### 1. Introduction
+
+```typescript
+// Section type from schema.ts:101
+type: "introduction"
+```
+
+- **Purpose**: Hook learners and connect to prior knowledge
+- **Content**: Engaging opener, relatable scenario
+- **Visual**: Featured image related to topic
+
+### 2. Key Concepts
+
+```typescript
+type: "key_concepts"
+```
+
+- **Purpose**: Core teaching content
+- **Content**: Definitions, explanations, vocabulary
+- **Formatting**: Bold for new terms, bullet points for lists
+
+### 3. Examples
+
+```typescript
+type: "examples"
+```
+
+- **Purpose**: Demonstrate concepts in action
+- **Content**: Worked examples, step-by-step solutions
+- **Visual Metaphor**: Consistent throughout (e.g., all fraction examples use pizza)
+
+### 4. Practice
+
+```typescript
+type: "practice"
+```
+
+- **Purpose**: Learner engagement and application
+- **Content**: Activities, prompts, thought exercises
+- **Interactive**: Encourages active learning
+
+### 5. Summary
+
+```typescript
+type: "summary"
+```
+
+- **Purpose**: Reinforce key takeaways
+- **Content**: Brief recap of ONLY what was covered
+- **Scope Discipline**: Never promises content not delivered in lesson
+
+## SVG Illustrations
+
+Lessons include custom **educational SVG illustrations** generated specifically for the content.
+
+### Image Generation
+
+```typescript
+// From enhanced-lesson-service.ts:277-292
+for (const section of content.sections) {
+  const sectionImageIds: string[] = [];
+  
+  // If the section has an image description, create a placeholder
+  if (section.imageDescription) {
+    const imageId = generateId(10);
+    allImagePrompts.push({
+      id: imageId,
+      description: section.imageDescription,
+      prompt: buildImagePrompt(section.imageDescription, topic, gradeLevel)
+    });
+    sectionImageIds.push(imageId);
+  }
+```
+
+### Image Requirements
+
+<Warning>
+All lesson images follow strict rules:
+- **NO text, letters, or numbers** in images
+- **NO mathematical notation or symbols**
+- Simple, clean shapes and objects only
+- Bright, friendly colors appropriate for grade level
+- White or light background
+</Warning>
+
+```typescript
+// From enhanced-lesson-service.ts:199-210
+function buildImagePrompt(description: string, topic: string, gradeLevel: number): string {
+  return `${description}
+
+Style: Simple, clean, flat illustration. Bright colors appropriate for grade ${gradeLevel} students. White background.
+
+STRICT RULES:
+- NO text, letters, words, or labels anywhere in the image
+- NO numbers, fractions, mathematical notation, or symbols
+- NO annotations, callouts, or speech bubbles
+- Simple clean shapes and objects only
+```
+
+## Viewing a Lesson
+
+When learners tap their active lesson:
+
+```typescript
+// From lesson-page.tsx:102-135
+return (
+  <SafeAreaView style={styles.container}>
+    <SunschoolHeader subtitle={lesson.spec.title} />
+    
+    <ScrollView contentContainerStyle={styles.scrollContent}>
+      <View style={styles.lessonContent}>
+        <Text style={styles.lessonTitle}>{lesson.spec.title}</Text>
+        
+        <EnhancedLessonContent enhancedSpec={lesson.spec} />
+      </View>
+
+      <View style={styles.quizPrompt}>
+        <Text style={styles.quizPromptTitle}>Think you've got it?</Text>
+        <Text style={styles.quizPromptText}>
+          Let's play a quick challenge about {lesson.spec.title.toLowerCase()}!
+        </Text>
+      </View>
+    </ScrollView>
+
+    <View style={styles.footer}>
+      <TouchableOpacity style={styles.quizButton} onPress={handleStartQuiz}>
+        <Text style={styles.quizButtonText}>Let's Go!</Text>
+      </TouchableOpacity>
+    </View>
+  </SafeAreaView>
+);
+```
+
+### Lesson Display Features
+
+- **Scrollable content** with all 5 sections
+- **Rendered markdown** with proper formatting
+- **Embedded images** inline with text
+- **Quiz prompt** at the bottom
+- **"Let's Go!" button** to start the quiz
+
+## Lesson Validation
+
+Before lessons are shown to learners, they go through validation:
+
+```typescript
+// From enhanced-lesson-service.ts:430-433
+// Reject lessons with no real questions — throw so caller can retry
+if (!enhancedLesson.questions || enhancedLesson.questions.length < 2) {
+  throw new Error(`Generated lesson has insufficient questions (${enhancedLesson.questions?.length ?? 0})`);
+}
+```
+
+<Check>
+**Quality Guarantees**:
+- Minimum 2 questions per lesson
+- Proper section structure
+- Grade-appropriate vocabulary
+- Consistent visual metaphors
+</Check>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Take a Quiz" icon="graduation-cap" href="/learners/quizzes">
+    Learn how quizzes test lesson comprehension
+  </Card>
+  
+  <Card title="Earn Points" icon="coins" href="/learners/points-rewards">
+    Discover how completing lessons earns points
+  </Card>
+</CardGroup>

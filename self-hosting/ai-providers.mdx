@@ -1,0 +1,521 @@
+---
+title: AI Provider Configuration
+description: Configure OpenRouter, Perplexity, and Bittensor for lesson generation
+icon: robot
+---
+
+## Overview
+
+Sunschool supports multiple AI providers with automatic fallback chains. From `server/services/ai.ts`:
+
+```typescript
+import {
+  askOpenRouter as chatOpenRouter,
+  generateLessonContent as generateLessonContentOpenRouter,
+  generateQuizQuestions as generateQuizQuestionsOpenRouter
+} from "../openrouter";
+
+import {
+  askBittensor as chatBittensor,
+  generateLessonContent as generateLessonContentBittensor
+} from "../bittensor";
+
+import { LLM_PROVIDER } from '../config/env';
+import { ENABLE_BITTENSOR_SUBNET_1, BITTENSOR_FALLBACK_ENABLED } from '../config/flags';
+```
+
+### Provider Selection
+
+From `server/services/ai.ts`:
+
+```typescript
+export const getLLMProvider = () => {
+  const configured = process.env.LLM_PROVIDER?.toLowerCase() || 'openrouter';
+
+  // Only allow Bittensor if explicitly enabled
+  if (configured === 'bittensor' && !ENABLE_BITTENSOR_SUBNET_1) {
+    console.warn('Bittensor requested but not enabled. Falling back to OpenRouter.');
+    return 'openrouter';
+  }
+
+  return configured;
+};
+```
+
+## OpenRouter (Primary)
+
+<Info>
+  **OpenRouter** is the recommended primary provider. It provides access to multiple models including GPT-4, Claude, and Gemini.
+</Info>
+
+### Setup
+
+<Steps>
+  <Step title="Create Account">
+    Sign up at [openrouter.ai](https://openrouter.ai)
+  </Step>
+  <Step title="Add Credits">
+    Navigate to [Credits](https://openrouter.ai/credits) and add balance ($5-10 recommended for testing)
+  </Step>
+  <Step title="Generate API Key">
+    Go to [Keys](https://openrouter.ai/keys) and create a new API key
+  </Step>
+  <Step title="Configure Environment">
+    ```env
+    OPENROUTER_API_KEY="sk-or-v1-1234567890abcdef..."
+    ```
+  </Step>
+</Steps>
+
+### Models Used
+
+From `server/config/env.ts`:
+
+```typescript
+export const OPENROUTER_IMAGE_MODEL = process.env.OPENROUTER_IMAGE_MODEL || 'google/gemini-3.1-pro-preview';
+export const OPENROUTER_SVG_MODEL = process.env.OPENROUTER_SVG_MODEL || 'google/gemini-3.1-pro-preview';
+```
+
+**Default models:**
+
+| Purpose | Model | Why |
+|---------|-------|-----|
+| **Lesson content** | `google/gemini-3.1-pro-preview` | High-quality long-form content |
+| **Quiz generation** | `google/gemini-3.1-pro-preview` | Strong reasoning for question creation |
+| **SVG illustrations** | `google/gemini-3.1-flash-lite-preview` | Fast, cost-effective visual generation |
+
+### Model Customization
+
+Override default models:
+
+```env
+OPENROUTER_IMAGE_MODEL=anthropic/claude-3.5-sonnet
+OPENROUTER_SVG_MODEL=google/gemini-3.1-flash-lite-preview
+```
+
+Available models at [openrouter.ai/models](https://openrouter.ai/models).
+
+### Fallback Chains
+
+From `server/config/env.ts`:
+
+```typescript
+export const SVG_MODEL_FALLBACKS: string[] = (process.env.SVG_MODEL_FALLBACKS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+export const DEFAULT_SVG_MODEL_FALLBACKS = [
+  'google/gemini-3.1-flash-lite-preview',
+  'google/gemini-3-flash-preview',
+];
+```
+
+**Configure fallbacks:**
+
+```env
+SVG_MODEL_FALLBACKS="google/gemini-3.1-flash-lite-preview,google/gemini-3-flash-preview,anthropic/claude-3-haiku"
+```
+
+From `ENGINEERING.md`:
+
+> Model fallback chain: primary model → fallbacks from `SVG_MODEL_FALLBACKS` env → built-in defaults. Models returning 402 (insufficient credits) or 404 are automatically skipped.
+
+### Rate Limits & Costs
+
+<Warning>
+  Monitor your OpenRouter usage at [openrouter.ai/activity](https://openrouter.ai/activity) to avoid unexpected charges.
+</Warning>
+
+**Approximate costs (as of 2026):**
+
+| Model | Input (per 1M tokens) | Output (per 1M tokens) |
+|-------|----------------------|------------------------|
+| Gemini 3.1 Pro | $2.50 | $10.00 |
+| Gemini 3.1 Flash | $0.075 | $0.30 |
+| Claude 3.5 Sonnet | $3.00 | $15.00 |
+
+**Typical lesson generation:**
+- Input: ~2,000 tokens (prompts + context)
+- Output: ~3,000 tokens (lesson content)
+- Cost per lesson: ~$0.05-0.10
+
+## Perplexity (Knowledge Enrichment)
+
+<Info>
+  **Perplexity** enhances lessons with up-to-date information and context. Optional but recommended.
+</Info>
+
+### Setup
+
+<Steps>
+  <Step title="Create Account">
+    Sign up at [perplexity.ai](https://www.perplexity.ai/)
+  </Step>
+  <Step title="Access API">
+    Navigate to [API Settings](https://www.perplexity.ai/settings/api)
+  </Step>
+  <Step title="Generate Key">
+    Create API key (starts with `pplx-`)
+  </Step>
+  <Step title="Configure">
+    ```env
+    PERPLEXITY_API_KEY="pplx-1234567890abcdef..."
+    ```
+  </Step>
+</Steps>
+
+### Use Cases
+
+From `ENGINEERING.md`:
+
+> **Perplexity** - Knowledge context enrichment
+
+Perplexity is used to:
+- Add current events to history lessons
+- Provide real-world examples for math/science
+- Enrich content with recent research
+
+**Example integration:**
+
+```typescript
+// Conceptual usage in lesson enrichment
+const context = await perplexity.search(topic);
+const lesson = await generateLessonWithContext(topic, context);
+```
+
+## Bittensor Subnet 1 (Experimental)
+
+<Warning>
+  **Bittensor integration is experimental.** Use OpenRouter for production deployments.
+</Warning>
+
+From `ENGINEERING.md`:
+
+> **Status:** Client and config implemented (Phases 1-3 complete). Testing/validation (Phase 4) and production deployment (Phase 5) pending.
+
+### What is Bittensor?
+
+Bittensor is a decentralized AI network where miners compete to provide LLM inference. Subnet 1 specializes in text generation.
+
+**Benefits:**
+- Decentralized (no single point of failure)
+- Competitive pricing
+- Open and auditable
+
+**Limitations:**
+- Still experimental for production
+- Variable response times
+- Requires wallet setup
+
+### Setup
+
+<Steps>
+  <Step title="Install Bittensor">
+    ```bash
+    pip install bittensor
+    ```
+  </Step>
+  <Step title="Create Wallet">
+    ```bash
+    btcli wallet new_coldkey --wallet.name my_wallet
+    btcli wallet new_hotkey --wallet.name my_wallet --wallet.hotkey my_hotkey
+    ```
+  </Step>
+  <Step title="Get API Key">
+    Follow [Bittensor documentation](https://docs.bittensor.com/) for API access
+  </Step>
+  <Step title="Configure Environment">
+    ```env
+    ENABLE_BITTENSOR_SUBNET_1=1
+    BITTENSOR_API_KEY="your-bittensor-key"
+    BITTENSOR_WALLET_NAME="my_wallet"
+    BITTENSOR_WALLET_HOTKEY="my_hotkey"
+    BITTENSOR_SUBNET_1_URL="https://archive.opentensor.ai/graphql"
+    ```
+  </Step>
+</Steps>
+
+### Enable as Primary Provider
+
+From `server/config/env.ts`:
+
+```typescript
+export const LLM_PROVIDER = process.env.LLM_PROVIDER || 'openrouter';
+export const BITTENSOR_API_KEY = process.env.BITTENSOR_API_KEY || '';
+export const BITTENSOR_SUBNET_1_URL = process.env.BITTENSOR_SUBNET_1_URL || 'https://archive.opentensor.ai/graphql';
+```
+
+**Set as primary:**
+
+```env
+LLM_PROVIDER=bittensor
+ENABLE_BITTENSOR_SUBNET_1=1
+BITTENSOR_FALLBACK_ENABLED=1
+```
+
+From `ENGINEERING.md`:
+
+```bash
+# Enable Bittensor as primary provider
+export ENABLE_BITTENSOR_SUBNET_1=1
+export LLM_PROVIDER=bittensor
+export BITTENSOR_API_KEY=your_key
+export BITTENSOR_WALLET_NAME=your_wallet
+export BITTENSOR_WALLET_HOTKEY=your_hotkey
+export BITTENSOR_FALLBACK_ENABLED=1  # fallback to OpenRouter
+```
+
+### Automatic Fallback
+
+From `server/services/ai.ts`:
+
+```typescript
+export const chat = async (options: any): Promise<BittensorResponse> => {
+  const provider = getLLMProvider();
+
+  if (provider === 'bittensor') {
+    try {
+      return await chatBittensor(options);
+    } catch (error) {
+      console.error('Bittensor chat failed:', error);
+      if (BITTENSOR_FALLBACK_ENABLED) {
+        console.log('Falling back to OpenRouter');
+        return await chatOpenRouter(options);
+      }
+      throw error;
+    }
+  }
+
+  return await chatOpenRouter(options);
+};
+```
+
+**Enable fallback:**
+
+```env
+BITTENSOR_FALLBACK_ENABLED=1
+```
+
+From `server/config/flags.ts`:
+
+```typescript
+export const BITTENSOR_FALLBACK_ENABLED = process.env.BITTENSOR_FALLBACK_ENABLED !== '0';
+```
+
+## Feature Flags
+
+### Global AI Toggle
+
+From `server/config/flags.ts`:
+
+```typescript
+export const USE_AI = process.env.USE_AI !== '0';
+```
+
+**Disable all AI features:**
+
+```env
+USE_AI=0
+```
+
+This uses static fallback content instead of AI generation. Useful for:
+- Testing without API costs
+- Offline development
+- Debugging non-AI features
+
+### Image Generation Controls
+
+```typescript
+export const ENABLE_SVG_LLM = process.env.ENABLE_SVG_LLM !== '0';
+export const ENABLE_OPENROUTER_IMAGES = process.env.ENABLE_OPENROUTER_IMAGES !== '0';
+export const ENABLE_STABILITY_FALLBACK = process.env.ENABLE_STABILITY_FALLBACK === '1';
+```
+
+**Configuration:**
+
+```env
+ENABLE_SVG_LLM=1                # LLM-generated SVG illustrations
+ENABLE_OPENROUTER_IMAGES=1      # Raster images via OpenRouter
+ENABLE_STABILITY_FALLBACK=0     # Stability AI (requires separate key)
+```
+
+### Image Provider Selection
+
+From `server/config/env.ts`:
+
+```typescript
+export const IMAGE_PROVIDER = process.env.IMAGE_PROVIDER || 'svg-llm';
+```
+
+**Options:**
+
+<Tabs>
+  <Tab title="svg-llm (Default)">
+    ```env
+    IMAGE_PROVIDER=svg-llm
+    OPENROUTER_SVG_MODEL=google/gemini-3.1-pro-preview
+    MAX_IMAGES_PER_LESSON=4
+    ```
+    
+    - Generates clean SVG illustrations
+    - Small file sizes (~10-50 KB)
+    - Works offline after generation
+    - Best for diagrams and educational graphics
+  </Tab>
+  <Tab title="openrouter">
+    ```env
+    IMAGE_PROVIDER=openrouter
+    OPENROUTER_IMAGE_MODEL=google/gemini-3.1-flash-image-preview
+    ```
+    
+    - Generates raster images (PNG/JPEG)
+    - More photorealistic
+    - Larger file sizes
+    - Requires model with vision capabilities
+  </Tab>
+  <Tab title="stability">
+    ```env
+    IMAGE_PROVIDER=stability
+    STABILITY_API_KEY=sk-...
+    ```
+    
+    - Uses Stability AI (Stable Diffusion)
+    - High-quality photorealistic images
+    - Separate API key required
+  </Tab>
+</Tabs>
+
+### Image Generation Timeouts
+
+```typescript
+export const IMAGE_GENERATION_TIMEOUT = parseInt(process.env.IMAGE_GENERATION_TIMEOUT || '15000');
+export const MAX_IMAGES_PER_LESSON = parseInt(process.env.MAX_IMAGES_PER_LESSON || '4');
+```
+
+**Configuration:**
+
+```env
+IMAGE_GENERATION_TIMEOUT=15000    # 15 seconds per image
+MAX_IMAGES_PER_LESSON=4           # Limit images per lesson
+```
+
+## Provider Comparison
+
+| Feature | OpenRouter | Perplexity | Bittensor |
+|---------|------------|------------|-----------|
+| **Status** | ✅ Production | ✅ Production | ⚠️ Experimental |
+| **Setup Complexity** | Low | Low | High |
+| **Cost** | Pay-per-use | Pay-per-use | Variable |
+| **Response Time** | Fast (1-3s) | Fast (1-2s) | Variable (3-10s) |
+| **Model Selection** | 100+ models | Proprietary | Subnet miners |
+| **Reliability** | High | High | Moderate |
+| **Use Case** | Primary LLM | Knowledge enrichment | Decentralized alternative |
+
+## Recommended Configuration
+
+### Production Setup
+
+```env
+# Primary AI provider
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY="sk-or-v1-..."
+OPENROUTER_SVG_MODEL=google/gemini-3.1-pro-preview
+
+# Knowledge enrichment
+PERPLEXITY_API_KEY="pplx-..."
+
+# Image generation
+IMAGE_PROVIDER=svg-llm
+ENABLE_SVG_LLM=1
+MAX_IMAGES_PER_LESSON=4
+IMAGE_GENERATION_TIMEOUT=15000
+
+# Fallback chains
+SVG_MODEL_FALLBACKS="google/gemini-3.1-flash-lite-preview,google/gemini-3-flash-preview"
+
+# Feature flags
+USE_AI=1
+ENABLE_STATS=1
+```
+
+### Development Setup
+
+```env
+# Minimal AI for testing
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY="sk-or-v1-..."
+
+# Disable expensive features
+ENABLE_OPENROUTER_IMAGES=0
+MAX_IMAGES_PER_LESSON=1
+
+# Fast models
+OPENROUTER_SVG_MODEL=google/gemini-3.1-flash-lite-preview
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="401 Unauthorized (OpenRouter)">
+    **Cause:** Invalid API key or expired credits.
+    
+    **Fix:**
+    ```bash
+    # Verify key
+    curl https://openrouter.ai/api/v1/auth/key \
+      -H "Authorization: Bearer $OPENROUTER_API_KEY"
+    
+    # Check credits
+    # Visit https://openrouter.ai/credits
+    ```
+  </Accordion>
+  
+  <Accordion title="402 Insufficient Credits">
+    **Cause:** OpenRouter account balance is zero.
+    
+    **Fix:**
+    1. Add credits at [openrouter.ai/credits](https://openrouter.ai/credits)
+    2. Fallback model will be tried automatically
+  </Accordion>
+  
+  <Accordion title="404 Model Not Found">
+    **Cause:** Model name typo or model no longer available.
+    
+    **Fix:**
+    ```env
+    # Use known-good model
+    OPENROUTER_SVG_MODEL=google/gemini-3.1-pro-preview
+    
+    # Check available models
+    curl https://openrouter.ai/api/v1/models
+    ```
+  </Accordion>
+  
+  <Accordion title="Bittensor Connection Timeout">
+    **Cause:** Subnet unreachable or wallet misconfigured.
+    
+    **Fix:**
+    ```bash
+    # Test connection
+    curl https://archive.opentensor.ai/graphql \
+      -H "Content-Type: application/json" \
+      -d '{"query": "{__typename}"}'
+    
+    # Enable fallback
+    BITTENSOR_FALLBACK_ENABLED=1
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security" icon="shield" href="/self-hosting/security">
+    Secure your AI provider API keys
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/self-hosting/monitoring">
+    Monitor AI usage and costs
+  </Card>
+  <Card title="Troubleshooting" icon="bug" href="/self-hosting/troubleshooting">
+    Debug AI provider issues
+  </Card>
+</CardGroup>

@@ -1,0 +1,142 @@
+---
+title: 'Achievements'
+description: 'Get learner achievements and milestones'
+icon: 'trophy'
+---
+
+## Get Achievements
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/achievements
+curl -X GET https://api.sunschool.xyz/api/achievements?learnerId=3 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="learnerId" type="string">
+  Learner ID to get achievements for (required for PARENT/ADMIN, defaults to authenticated user for LEARNER)
+</ParamField>
+
+### Authorization
+
+- **LEARNER**: Can only access their own achievements
+- **PARENT**: Can access their children's achievements with learnerId param
+- **ADMIN**: Can access any learner's achievements
+
+### Response
+
+<ResponseField name="achievements" type="array">
+  Array of achievement records
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">
+      Achievement ID
+    </ResponseField>
+    <ResponseField name="learnerId" type="string">
+      Learner user ID
+    </ResponseField>
+    <ResponseField name="type" type="string">
+      Achievement type identifier
+    </ResponseField>
+    <ResponseField name="payload" type="object">
+      Achievement details
+      <Expandable title="properties">
+        <ResponseField name="type" type="string">
+          Achievement type
+        </ResponseField>
+        <ResponseField name="title" type="string">
+          Achievement title
+        </ResponseField>
+        <ResponseField name="description" type="string">
+          Achievement description
+        </ResponseField>
+        <ResponseField name="icon" type="string">
+          Icon identifier or emoji
+        </ResponseField>
+        <ResponseField name="metadata" type="object">
+          Additional achievement data (varies by type)
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="earnedAt" type="string">
+      Timestamp when achievement was earned
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json Response Example
+[
+  {
+    "id": "ach_123456",
+    "learnerId": "3",
+    "type": "FIRST_PERFECT",
+    "payload": {
+      "type": "FIRST_PERFECT",
+      "title": "Perfect Score!",
+      "description": "Got 100% on your first quiz",
+      "icon": "🌟",
+      "metadata": {
+        "lessonId": "550e8400-e29b-41d4-a716-446655440000",
+        "subject": "Math"
+      }
+    },
+    "earnedAt": "2024-01-15T10:30:00.000Z"
+  },
+  {
+    "id": "ach_123457",
+    "learnerId": "3",
+    "type": "STREAK_7",
+    "payload": {
+      "type": "STREAK_7",
+      "title": "Week Warrior",
+      "description": "Completed lessons for 7 days in a row",
+      "icon": "🔥",
+      "metadata": {
+        "streakLength": 7
+      }
+    },
+    "earnedAt": "2024-01-14T09:15:00.000Z"
+  }
+]
+```
+
+### Error Codes
+
+- **400** - learnerId is required
+- **401** - Unauthorized
+- **403** - Forbidden
+
+---
+
+## Common Achievement Types
+
+Achievements are automatically awarded when learners reach specific milestones:
+
+### Score-Based
+
+- **FIRST_PERFECT** - First quiz with 100% score
+- **PERFECT_STREAK_3** - Three perfect scores in a row
+- **HIGH_SCORE_10** - Ten quizzes with 90%+ scores
+
+### Lesson Completion
+
+- **FIRST_LESSON** - Completed first lesson
+- **LESSONS_10** - Completed 10 lessons
+- **LESSONS_50** - Completed 50 lessons
+- **LESSONS_100** - Completed 100 lessons
+
+### Streak-Based
+
+- **STREAK_3** - Three-day learning streak
+- **STREAK_7** - Week-long learning streak
+- **STREAK_30** - Month-long learning streak
+
+### Subject Mastery
+
+- **SUBJECT_EXPLORER** - Tried lessons in 3+ different subjects
+- **SUBJECT_MASTER** - Completed 20+ lessons in a single subject
+
+<Note>
+  Achievements are checked and awarded automatically after each quiz submission. The system analyzes lesson history to determine which achievements have been earned.
+</Note>

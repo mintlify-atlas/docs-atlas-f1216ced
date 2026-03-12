@@ -1,0 +1,374 @@
+---
+title: Achievement System
+description: Types of achievements, earning badges, notifications, and trophy collection
+icon: trophy
+---
+
+## Achievement System Overview
+
+Sunschool rewards learners with **achievements** (also called "trophies" or "badges") for reaching milestones and demonstrating excellence. Achievements provide motivation and celebrate progress.
+
+## Types of Achievements
+
+Achievements are awarded automatically when learners meet specific criteria.
+
+### Milestone Achievements
+
+```typescript
+// From server/utils.ts:26-73
+export function checkForAchievements(lessonHistory: Lesson[], completedLesson?: Lesson) {
+  const achievements: {
+    type: string;
+    payload: {
+      title: string;
+      description: string;
+      icon: string;
+    };
+  }[] = [];
+  
+  // First lesson completed
+  if (lessonHistory.filter(l => l.status === "DONE").length === 1) {
+    achievements.push({
+      type: "FIRST_LESSON",
+      payload: {
+        title: "First Steps",
+        description: "Completed your very first lesson!",
+        icon: "award"
+      }
+    });
+  }
+  
+  // 5 lessons completed
+  if (lessonHistory.filter(l => l.status === "DONE").length === 5) {
+    achievements.push({
+      type: "FIVE_LESSONS",
+      payload: {
+        title: "Learning Explorer",
+        description: "Completed 5 lessons!",
+        icon: "book-open"
+      }
+    });
+  }
+```
+
+<CardGroup cols={2}>
+  <Card title="First Steps" icon="award">
+    **FIRST_LESSON**
+    
+    Earned after completing your very first lesson. Celebrates the beginning of the learning journey.
+  </Card>
+  
+  <Card title="Learning Explorer" icon="book-open">
+    **FIVE_LESSONS**
+    
+    Awarded when a learner completes 5 total lessons. Shows commitment to learning.
+  </Card>
+  
+  <Card title="Perfect Score!" icon="star">
+    **PERFECT_SCORE**
+    
+    Given when a learner gets 100% on any quiz. Recognizes excellence and mastery.
+  </Card>
+</CardGroup>
+
+### Perfect Score Achievement
+
+```typescript
+// From server/utils.ts:61-70
+// Perfect score on a quiz
+if (completedLesson && completedLesson.score === 100) {
+  achievements.push({
+    type: "PERFECT_SCORE",
+    payload: {
+      title: "Perfect Score!",
+      description: "Got all answers correct in a quiz!",
+      icon: "star"
+    }
+  });
+}
+```
+
+<Info>
+Perfect Score achievements can be earned multiple times - once for each quiz where the learner answers every question correctly.
+</Info>
+
+## Achievement Database Schema
+
+```typescript
+// From shared/schema.ts:178-195
+export const achievements = pgTable("achievements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  learnerId: varchar("learner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  payload: json("payload").$type<{
+    title: string;
+    description: string;
+    icon: string;
+  }>(),
+  awardedAt: timestamp("awarded_at").defaultNow(),
+});
+
+export const achievementsRelations = relations(achievements, ({ one }) => ({
+  learner: one(users, {
+    fields: [achievements.learnerId],
+    references: [users.id],
+  }),
+}));
+```
+
+### Achievement Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Unique identifier for each achievement |
+| `learnerId` | varchar | References the learner who earned it |
+| `type` | text | Achievement type (e.g., "FIRST_LESSON") |
+| `payload` | json | Contains title, description, and icon |
+| `awardedAt` | timestamp | When the achievement was earned |
+
+## How to Earn Badges
+
+Achievements are checked and awarded automatically after quiz completion:
+
+```typescript
+// From server/routes.ts:1115-1124
+// Check for achievements
+const newAchievements = checkForAchievements(lessonHistory, completedLesson);
+
+// Award any new achievements
+for (const achievement of newAchievements) {
+  await storage.createAchievement({
+    learnerId: learnerId.toString(),
+    type: achievement.type,
+    payload: achievement.payload
+  });
+}
+```
+
+### Earning Flow
+
+<Steps>
+  <Step title="Complete a Lesson">
+    Learner reads through all sections of a lesson
+  </Step>
+  
+  <Step title="Take the Quiz">
+    Submit answers to all quiz questions
+  </Step>
+  
+  <Step title="Server Checks Criteria">
+    Backend runs `checkForAchievements()` function
+    
+    ```typescript
+    const newAchievements = checkForAchievements(lessonHistory, completedLesson);
+    ```
+  </Step>
+  
+  <Step title="Achievements Awarded">
+    Matching achievements are created in the database
+    
+    ```typescript
+    for (const achievement of newAchievements) {
+      await storage.createAchievement({ ... });
+    }
+    ```
+  </Step>
+  
+  <Step title="Notification Shown">
+    Learner sees achievement unlock animation
+  </Step>
+</Steps>
+
+## Achievement Notifications
+
+When achievements are earned, learners see an exciting unlock animation.
+
+### Unlock Modal
+
+```typescript
+// From quiz-page.tsx:228-238
+{quizScore?.newAchievements && quizScore.newAchievements.length > 0 && (
+  <AchievementUnlock
+    achievements={quizScore.newAchievements.map(a => ({
+      title: a.title || a.payload?.title || 'Achievement Unlocked!',
+      description: a.description || a.payload?.description,
+      type: a.type,
+    }))}
+    visible={showAchievements}
+    onDismiss={() => setShowAchievements(false)}
+  />
+)}
+```
+
+### Notification Timing
+
+```typescript
+// From quiz-page.tsx:111-113
+if (data.newAchievements && data.newAchievements.length > 0) {
+  setTimeout(() => setShowAchievements(true), 1500);
+}
+```
+
+<Info>
+Achievement notifications appear 1.5 seconds after quiz results, giving learners time to see their score first.
+</Info>
+
+### Visual Presentation
+
+```typescript
+// From quiz-page.tsx:399-411
+{quizScore.newAchievements && quizScore.newAchievements.length > 0 && (
+  <View style={styles.achievementsContainer}>
+    <Text style={styles.achievementsTitle}>Trophies Unlocked!</Text>
+    {quizScore.newAchievements.map((achievement, index) => (
+      <View key={index} style={styles.achievementItem}>
+        <View style={styles.achievementIcon}>
+          <CheckCircle size={24} color="#FFD93D" />
+        </View>
+        <Text style={styles.achievementText}>{achievement.title}</Text>
+      </View>
+    ))}
+  </View>
+)}
+```
+
+## Viewing Trophy Collection
+
+Learners can view all their earned achievements from the dashboard.
+
+### Recent Achievements Display
+
+```typescript
+// From learner-dashboard.tsx:36-44
+// Fetch achievements
+const {
+  data: achievements,
+  isLoading: isAchievementsLoading,
+  error: achievementsError,
+} = useQuery({
+  queryKey: ['/api/achievements'],
+  queryFn: () => apiRequest('GET', '/api/achievements').then(res => res.data),
+});
+```
+
+### Achievement Cards
+
+```typescript
+// From learner-dashboard.tsx:161-188
+<View style={styles.sectionContainer}>
+  <View style={styles.sectionHeader}>
+    <Text style={styles.sectionTitle}>Recent Achievements</Text>
+    <TouchableOpacity onPress={() => navigation.navigate('ProgressPage')}>
+      <Text style={styles.seeAllText}>See All</Text>
+    </TouchableOpacity>
+  </View>
+
+  {isAchievementsLoading ? (
+    <ActivityIndicator size="large" color={colors.primary} />
+  ) : recentAchievements.length > 0 ? (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      {recentAchievements.map((achievement) => (
+        <AchievementBadge
+          key={achievement.id}
+          achievement={achievement}
+          style={styles.achievementBadge}
+        />
+      ))}
+    </ScrollView>
+  ) : (
+    <View style={styles.emptyState}>
+      <Award size={48} color={colors.primaryLight} />
+      <Text style={styles.emptyStateText}>Complete lessons to earn achievements</Text>
+    </View>
+  )}
+</View>
+```
+
+### Display Features
+
+<Tabs>
+  <Tab title="Dashboard View">
+    - Shows **3 most recent** achievements
+    - Horizontal scroll for easy browsing
+    - "See All" link to full collection
+    - Empty state with encouragement if none yet
+  </Tab>
+  
+  <Tab title="Progress Page">
+    - Complete achievement history
+    - Sorted by most recent first
+    - Total count displayed
+    - Organized by date earned
+  </Tab>
+</Tabs>
+
+## Achievement API Endpoints
+
+### Get Achievements
+
+```typescript
+// From server/routes.ts:1224-1248
+app.get("/api/achievements", isAuthenticated, asyncHandler(async (req: AuthRequest, res) => {
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+
+  // Get learner ID from query or use current user
+  const learnerId = req.query.learnerId ? Number(req.query.learnerId) : user.id;
+  
+  // If requesting another learner's achievements, verify authorization
+  if (learnerId !== user.id) {
+    // Check if user is authorized to view this learner's achievements
+    const learner = await storage.getUser(learnerId);
+    if (!learner || (learner.parentId !== user.id && user.role !== 'ADMIN')) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+  }
+
+  const achievements = await storage.getAchievements(learnerId);
+  res.json(achievements);
+}));
+```
+
+<Check>
+**Authorization checks**:
+- Learners can view their own achievements
+- Parents can view their children's achievements
+- Admins can view all achievements
+</Check>
+
+## Parent View
+
+Parents can see all achievements their children have earned:
+
+```typescript
+// From server/routes.ts:1279-1317
+const [learner, profile, lessons, achievements] = await Promise.all([
+  storage.getUser(learnerId),
+  storage.getLearnerProfile(learnerId),
+  storage.getLessons(learnerId),
+  storage.getAchievements(learnerId)
+]);
+
+// ... later in report generation
+achiementsCount: achievements.length,
+```
+
+Parents see:
+- **Total achievement count** in learner reports
+- **Full achievement list** with dates earned
+- **Achievement types** and descriptions
+- **Progress over time**
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Earn Points" icon="coins" href="/learners/points-rewards">
+    Learn how achievements connect to the rewards system
+  </Card>
+  
+  <Card title="Track Progress" icon="chart-line" href="/learners/concept-mastery">
+    See how achievements reflect learning progress
+  </Card>
+</CardGroup>

@@ -1,0 +1,481 @@
+---
+title: Environment Configuration
+description: Configure environment variables and API keys
+icon: gear
+---
+
+## Environment File Setup
+
+Sunschool uses a `.env` file for configuration. During development, the server loads variables using `dotenv`. In production (Replit, Railway), environment variables are set directly.
+
+From `server/config/env.ts`:
+
+```typescript
+if (process.env.NODE_ENV === 'development' && !process.env.REPL_ID) {
+  try {
+    require('dotenv').config();
+  } catch (err) {
+    console.warn('Optional dependency dotenv not found.');
+  }
+}
+```
+
+### Create Configuration File
+
+```bash
+cp .env.example .env
+```
+
+The `.env.example` file from the repository:
+
+```env
+# Database connection string
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+
+# OpenRouter API key
+OPENROUTER_API_KEY="sk-or-...."
+
+# Session secret for authentication
+SESSION_SECRET="your-session-secret"
+
+# JWT token secret
+JWT_SECRET="your-jwt-secret"
+
+# Feature flags
+# Set to 0 to disable AI features
+USE_AI=1
+# Set to 0 to disable statistics collection
+ENABLE_STATS=1
+```
+
+## Required Variables
+
+### DATABASE_URL
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL connection string with credentials and database name
+</ParamField>
+
+**Format:**
+```
+postgresql://[user]:[password]@[host]:[port]/[database]
+```
+
+**Examples:**
+
+<Tabs>
+  <Tab title="Neon Serverless">
+    ```env
+    DATABASE_URL="postgresql://user:pass@ep-cool-name-123456.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    ```
+  </Tab>
+  <Tab title="Local PostgreSQL">
+    ```env
+    DATABASE_URL="postgresql://sunschool_user:secure_password@localhost:5432/sunschool"
+    ```
+  </Tab>
+  <Tab title="Railway PostgreSQL">
+    ```env
+    DATABASE_URL="postgresql://postgres:password@containers-us-west-1.railway.app:5432/railway"
+    ```
+  </Tab>
+</Tabs>
+
+From `server/config/env.ts`:
+
+```typescript
+export const DATABASE_URL = getEnv('DATABASE_URL');
+export const DATABASE_SSL = getEnv('DATABASE_SSL', 'true') === 'true';
+```
+
+### JWT_SECRET
+
+<ParamField path="JWT_SECRET" type="string" required>
+  Secret key for signing JWT authentication tokens. Defaults to SESSION_SECRET if not provided.
+</ParamField>
+
+**Generate a secure secret:**
+
+```bash
+# Using OpenSSL
+openssl rand -base64 32
+# Output: XwK9vL2mN8pQ5rT6uY7zA1bC3dE4fG5h
+
+# Using Node.js
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+**Configuration:**
+
+```env
+JWT_SECRET="XwK9vL2mN8pQ5rT6uY7zA1bC3dE4fG5h"
+```
+
+From `server/config/env.ts`:
+
+```typescript
+export const JWT_SECRET = getEnv('JWT_SECRET', SESSION_SECRET);
+export const JWT_EXPIRY = getEnv('JWT_EXPIRY', '7d');
+```
+
+Tokens expire after 7 days by default. See [Security Configuration](/self-hosting/security) for details.
+
+### SESSION_SECRET
+
+<ParamField path="SESSION_SECRET" type="string" required>
+  Secret for session encryption and cookie signing
+</ParamField>
+
+```env
+SESSION_SECRET="your-session-secret-change-me"
+```
+
+**Best practices:**
+- Use different secrets for development and production
+- Minimum 32 characters
+- Never commit secrets to version control
+
+From `server/config/env.ts`:
+
+```typescript
+export const SESSION_SECRET = getEnv('SESSION_SECRET', 'dev-secret-change-me');
+```
+
+<Warning>
+  The default `dev-secret-change-me` is **insecure**. Always set a custom value in production.
+</Warning>
+
+### OPENROUTER_API_KEY
+
+<ParamField path="OPENROUTER_API_KEY" type="string" required>
+  API key for OpenRouter (primary AI provider)
+</ParamField>
+
+**Obtain an API key:**
+
+1. Sign up at [openrouter.ai](https://openrouter.ai)
+2. Navigate to [Keys](https://openrouter.ai/keys)
+3. Create a new API key
+4. Copy the key (starts with `sk-or-v1-...`)
+
+**Configuration:**
+
+```env
+OPENROUTER_API_KEY="sk-or-v1-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+```
+
+From `server/config/env.ts`:
+
+```typescript
+export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+export const OPENROUTER_IMAGE_MODEL = process.env.OPENROUTER_IMAGE_MODEL || 'google/gemini-3.1-pro-preview';
+export const OPENROUTER_SVG_MODEL = process.env.OPENROUTER_SVG_MODEL || 'google/gemini-3.1-pro-preview';
+```
+
+OpenRouter provides access to multiple models. Sunschool uses:
+- **Lesson generation**: Gemini 3.1 Pro
+- **SVG illustrations**: Gemini 3.1 Flash
+
+## Optional Variables
+
+### PERPLEXITY_API_KEY
+
+<ParamField path="PERPLEXITY_API_KEY" type="string">
+  API key for Perplexity (knowledge enrichment)
+</ParamField>
+
+```env
+PERPLEXITY_API_KEY="pplx-1234567890abcdef"
+```
+
+From `server/config/env.ts`:
+
+```typescript
+export const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY || '';
+```
+
+**Use case:** Enriching lesson content with up-to-date information and context.
+
+### BITTENSOR_API_KEY (Experimental)
+
+<ParamField path="BITTENSOR_API_KEY" type="string">
+  API key for Bittensor Subnet 1 (decentralized AI)
+</ParamField>
+
+```env
+BITTENSOR_API_KEY="your-bittensor-key"
+BITTENSOR_WALLET_NAME="your-wallet-name"
+BITTENSOR_WALLET_HOTKEY="your-wallet-hotkey"
+BITTENSOR_SUBNET_1_URL="https://archive.opentensor.ai/graphql"
+```
+
+From `server/config/env.ts`:
+
+```typescript
+export const BITTENSOR_API_KEY = process.env.BITTENSOR_API_KEY || '';
+export const BITTENSOR_SUBNET_1_URL = process.env.BITTENSOR_SUBNET_1_URL || 'https://archive.opentensor.ai/graphql';
+export const BITTENSOR_WALLET_NAME = process.env.BITTENSOR_WALLET_NAME;
+export const BITTENSOR_WALLET_HOTKEY = process.env.BITTENSOR_WALLET_HOTKEY;
+```
+
+See [AI Provider Configuration](/self-hosting/ai-providers) for Bittensor setup.
+
+### PORT
+
+<ParamField path="PORT" type="number" default="5000">
+  Server listening port
+</ParamField>
+
+```env
+PORT=5000
+```
+
+From `server/config/env.ts`:
+
+```typescript
+export const PORT = parseInt(getEnv('PORT', '5000'));
+```
+
+### NODE_ENV
+
+<ParamField path="NODE_ENV" type="string" default="development">
+  Environment mode: `development` or `production`
+</ParamField>
+
+```env
+NODE_ENV=production
+```
+
+From `server/config/env.ts`:
+
+```typescript
+export const NODE_ENV = getEnv('NODE_ENV', 'development');
+```
+
+Affects:
+- Logging verbosity
+- Error detail exposure
+- SSL requirements
+
+## Feature Flags
+
+From `server/config/flags.ts`:
+
+### USE_AI
+
+<ParamField path="USE_AI" type="boolean" default="1">
+  Enable/disable AI features entirely. Set to `0` for static fallback content.
+</ParamField>
+
+```env
+USE_AI=1
+```
+
+```typescript
+export const USE_AI = process.env.USE_AI !== '0';
+```
+
+### ENABLE_STATS
+
+<ParamField path="ENABLE_STATS" type="boolean" default="1">
+  Enable statistics collection and analytics
+</ParamField>
+
+```env
+ENABLE_STATS=1
+```
+
+```typescript
+export const ENABLE_STATS = process.env.ENABLE_STATS !== '0';
+```
+
+### ENABLE_BITTENSOR_SUBNET_1
+
+<ParamField path="ENABLE_BITTENSOR_SUBNET_1" type="boolean" default="0">
+  Enable Bittensor as AI provider
+</ParamField>
+
+```env
+ENABLE_BITTENSOR_SUBNET_1=1
+BITTENSOR_FALLBACK_ENABLED=1
+```
+
+```typescript
+export const ENABLE_BITTENSOR_SUBNET_1 = process.env.ENABLE_BITTENSOR_SUBNET_1 === '1';
+export const BITTENSOR_FALLBACK_ENABLED = process.env.BITTENSOR_FALLBACK_ENABLED !== '0';
+```
+
+### Image Generation Flags
+
+```env
+ENABLE_SVG_LLM=1
+ENABLE_OPENROUTER_IMAGES=1
+ENABLE_STABILITY_FALLBACK=0
+```
+
+```typescript
+export const ENABLE_SVG_LLM = process.env.ENABLE_SVG_LLM !== '0';
+export const ENABLE_OPENROUTER_IMAGES = process.env.ENABLE_OPENROUTER_IMAGES !== '0';
+export const ENABLE_STABILITY_FALLBACK = process.env.ENABLE_STABILITY_FALLBACK === '1';
+```
+
+## Advanced Configuration
+
+### Image Generation
+
+<ParamField path="IMAGE_PROVIDER" type="string" default="svg-llm">
+  Primary image generation strategy: `svg-llm`, `openrouter`, or `stability`
+</ParamField>
+
+```env
+IMAGE_PROVIDER=svg-llm
+OPENROUTER_IMAGE_MODEL=google/gemini-3.1-pro-preview
+OPENROUTER_SVG_MODEL=google/gemini-3.1-pro-preview
+IMAGE_GENERATION_TIMEOUT=15000
+MAX_IMAGES_PER_LESSON=4
+```
+
+From `server/config/env.ts`:
+
+```typescript
+export const IMAGE_PROVIDER = process.env.IMAGE_PROVIDER || 'svg-llm';
+export const OPENROUTER_IMAGE_MODEL = process.env.OPENROUTER_IMAGE_MODEL || 'google/gemini-3.1-pro-preview';
+export const OPENROUTER_SVG_MODEL = process.env.OPENROUTER_SVG_MODEL || 'google/gemini-3.1-pro-preview';
+export const IMAGE_GENERATION_TIMEOUT = parseInt(process.env.IMAGE_GENERATION_TIMEOUT || '15000');
+export const MAX_IMAGES_PER_LESSON = parseInt(process.env.MAX_IMAGES_PER_LESSON || '4');
+```
+
+### Model Fallback Chains
+
+<ParamField path="SVG_MODEL_FALLBACKS" type="string">
+  Comma-separated list of fallback models for SVG generation
+</ParamField>
+
+```env
+SVG_MODEL_FALLBACKS="google/gemini-3.1-flash-lite-preview,google/gemini-3-flash-preview"
+IMAGE_MODEL_FALLBACKS="google/gemini-3.1-flash-image-preview,google/gemini-3-flash-preview"
+```
+
+From `server/config/env.ts`:
+
+```typescript
+export const SVG_MODEL_FALLBACKS: string[] = (process.env.SVG_MODEL_FALLBACKS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+export const DEFAULT_SVG_MODEL_FALLBACKS = [
+  'google/gemini-3.1-flash-lite-preview',
+  'google/gemini-3-flash-preview',
+];
+```
+
+Fallbacks activate when primary model returns 404 or 402 (insufficient credits).
+
+### LLM Provider Selection
+
+<ParamField path="LLM_PROVIDER" type="string" default="openrouter">
+  Primary LLM provider: `openrouter`, `bittensor`, or `perplexity`
+</ParamField>
+
+```env
+LLM_PROVIDER=openrouter
+```
+
+From `server/config/env.ts`:
+
+```typescript
+export const LLM_PROVIDER = process.env.LLM_PROVIDER || 'openrouter';
+```
+
+## Complete Example
+
+### Production .env
+
+```env
+# ─── Database ───
+DATABASE_URL="postgresql://user:pass@ep-cool-name.us-east-2.aws.neon.tech/neondb?sslmode=require"
+DATABASE_SSL=true
+
+# ─── Server ───
+PORT=5000
+NODE_ENV=production
+
+# ─── Authentication ───
+JWT_SECRET="XwK9vL2mN8pQ5rT6uY7zA1bC3dE4fG5hIjK6lM7nO8pQ9rS0tU1vW2xY3zA4b"
+SESSION_SECRET="A1bC2dE3fG4hI5jK6lM7nO8pQ9rS0tU1vW2xY3zA4bC5dE6fG7hI8jK9lM0n"
+JWT_EXPIRY=7d
+
+# ─── AI Providers ───
+OPENROUTER_API_KEY="sk-or-v1-abcdef1234567890..."
+PERPLEXITY_API_KEY="pplx-1234567890abcdef..."
+
+# ─── Feature Flags ───
+USE_AI=1
+ENABLE_STATS=1
+ENABLE_SVG_LLM=1
+ENABLE_OPENROUTER_IMAGES=1
+
+# ─── Image Generation ───
+IMAGE_PROVIDER=svg-llm
+OPENROUTER_SVG_MODEL=google/gemini-3.1-pro-preview
+MAX_IMAGES_PER_LESSON=4
+IMAGE_GENERATION_TIMEOUT=15000
+```
+
+### Development .env
+
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/sunschool_dev"
+DATABASE_SSL=false
+
+PORT=5000
+NODE_ENV=development
+
+JWT_SECRET="dev-jwt-secret-not-for-production"
+SESSION_SECRET="dev-session-secret-not-for-production"
+
+OPENROUTER_API_KEY="sk-or-v1-..."
+
+USE_AI=1
+ENABLE_STATS=1
+```
+
+## Validation
+
+From `server/config/env.ts`, the `getEnv` helper throws errors for missing required variables:
+
+```typescript
+export function getEnv(key: string, fallback?: string): string {
+  const value = process.env[key];
+  if (value === undefined) {
+    if (fallback !== undefined) {
+      return fallback;
+    }
+    throw new Error(`Environment variable ${key} is required but not set`);
+  }
+  return value;
+}
+```
+
+**Test your configuration:**
+
+```bash
+node -e "require('dotenv').config(); console.log('DATABASE_URL:', process.env.DATABASE_URL?.slice(0, 20) + '...');"
+# DATABASE_URL: postgresql://user:pa...
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Setup" icon="database" href="/self-hosting/database">
+    Initialize PostgreSQL and run migrations
+  </Card>
+  <Card title="AI Providers" icon="robot" href="/self-hosting/ai-providers">
+    Configure OpenRouter, Perplexity, and Bittensor
+  </Card>
+  <Card title="Security" icon="shield" href="/self-hosting/security">
+    Implement authentication and access controls
+  </Card>
+  <Card title="Troubleshooting" icon="bug" href="/self-hosting/troubleshooting">
+    Resolve common configuration issues
+  </Card>
+</CardGroup>

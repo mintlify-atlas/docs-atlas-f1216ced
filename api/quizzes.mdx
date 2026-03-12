@@ -1,0 +1,186 @@
+---
+title: 'Quizzes'
+description: 'Submit quiz answers and receive scores'
+icon: 'clipboard-question'
+---
+
+## Submit Quiz Answers
+
+<Note>
+  **Authentication Required:** Any authenticated user with access to the lesson
+</Note>
+
+```bash POST /api/lessons/:lessonId/answer
+curl -X POST https://api.sunschool.xyz/api/lessons/550e8400-e29b-41d4-a716-446655440000/answer \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "answers": [1, 0, 2, 1],
+    "doubleOrLoss": false,
+    "doubleQuestionIndices": [0, 2]
+  }'
+```
+
+<ParamField path="lessonId" type="string" required>
+  Lesson UUID
+</ParamField>
+
+<ParamField body="answers" type="array" required>
+  Array of selected answer indices (0-based) for each question
+</ParamField>
+
+<ParamField body="doubleOrLoss" type="boolean">
+  Legacy flag: apply double-or-loss to all questions (default: false)
+</ParamField>
+
+<ParamField body="doubleQuestionIndices" type="array">
+  Array of question indices (0-based) where double-or-loss is enabled
+</ParamField>
+
+### Authorization
+
+- **LEARNER**: Can submit for their own lessons
+- **PARENT**: Can submit for their children's lessons
+- **ADMIN**: Can submit for any lesson
+
+<Note>
+  When a parent submits answers, points and achievements are attributed to the child learner, not the parent.
+</Note>
+
+### Double-or-Loss Mode
+
+When double-or-loss is enabled for a question:
+- **Correct answer**: Award 2 points instead of 1
+- **Wrong answer**: Deduct 1 point from balance
+
+### Response
+
+<ResponseField name="lesson" type="object">
+  Updated lesson object with status "DONE" and final score
+</ResponseField>
+
+<ResponseField name="score" type="number">
+  Percentage score (0-100)
+</ResponseField>
+
+<ResponseField name="correctCount" type="number">
+  Number of correct answers
+</ResponseField>
+
+<ResponseField name="totalQuestions" type="number">
+  Total number of questions in the quiz
+</ResponseField>
+
+<ResponseField name="wrongCount" type="number">
+  Number of incorrect answers
+</ResponseField>
+
+<ResponseField name="pointsAwarded" type="number">
+  Total points earned from correct answers
+</ResponseField>
+
+<ResponseField name="pointsDeducted" type="number">
+  Total points deducted from double-or-loss wrong answers
+</ResponseField>
+
+<ResponseField name="doubleOrLoss" type="boolean">
+  Whether any double-or-loss was used
+</ResponseField>
+
+<ResponseField name="doubleQuestionIndices" type="array">
+  Array of question indices where double-or-loss was applied
+</ResponseField>
+
+<ResponseField name="newBalance" type="number">
+  Updated points balance after this quiz
+</ResponseField>
+
+<ResponseField name="newAchievements" type="array">
+  Array of newly earned achievements
+</ResponseField>
+
+```json Response Example
+{
+  "lesson": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "learnerId": 3,
+    "status": "DONE",
+    "score": 75,
+    "subject": "Math"
+  },
+  "score": 75,
+  "correctCount": 3,
+  "totalQuestions": 4,
+  "wrongCount": 1,
+  "pointsAwarded": 5,
+  "pointsDeducted": 1,
+  "doubleOrLoss": true,
+  "doubleQuestionIndices": [0, 2],
+  "newBalance": 24,
+  "newAchievements": [
+    {
+      "type": "FIRST_PERFECT",
+      "title": "Perfect Score!",
+      "description": "You got 100% on your first quiz!"
+    }
+  ]
+}
+```
+
+<Warning>
+  Submitting answers automatically:
+  - Updates the lesson status to "DONE"
+  - Awards/deducts points based on performance
+  - Updates concept mastery tracking
+  - Stores question hashes for deduplication
+  - Checks for and awards new achievements
+  - Pre-generates the next lesson in the background
+</Warning>
+
+### Error Codes
+
+- **400** - Answers must be an array
+- **400** - Lesson is not active
+- **400** - Invalid lesson specification
+- **401** - Unauthorized
+- **403** - Forbidden
+- **404** - Lesson not found
+
+---
+
+## Understanding Quiz Scoring
+
+### Base Points
+
+- Each correct answer: **1 point**
+- Each wrong answer: **0 points**
+
+### Double-or-Loss Multiplier
+
+When enabled for specific questions:
+
+<CodeGroup>
+```json Correct Answer (Doubled)
+{
+  "basePoints": 1,
+  "doubleOrLossMultiplier": 2,
+  "pointsAwarded": 2
+}
+```
+
+```json Wrong Answer (Loss)
+{
+  "basePoints": 0,
+  "doubleOrLossDeduction": -1,
+  "pointsDeducted": 1
+}
+```
+</CodeGroup>
+
+### Percentage Score Calculation
+
+```javascript
+const score = Math.round((correctCount / totalQuestions) * 100);
+```
+
+The percentage score is independent of the double-or-loss points system.

@@ -1,0 +1,438 @@
+---
+title: Knowledge Graph
+description: Visual learning map, connected concepts, progress visualization, and subject relationships
+icon: network-wired
+---
+
+## Knowledge Graph Overview
+
+The **Knowledge Graph** (also called "Brain Map" or "My Brain Map") is a visual representation of everything a learner knows. It shows concepts as **nodes** and the relationships between them as **edges**, creating an interconnected map of learning.
+
+## Visual Learning Map
+
+Learners see their knowledge graph on the home screen:
+
+```typescript
+// From learner-home.tsx:338-348
+{profile?.graph && profile.graph.nodes.length > 0 && (
+  <View style={styles.sectionContainer}>
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>My Brain Map</Text>
+    </View>
+    <View style={styles.graphContainer}>
+      <KnowledgeGraph graph={profile.graph} />
+    </View>
+  </View>
+)}
+```
+
+### Graph Data Structure
+
+```typescript
+// From shared/schema.ts:130-143
+graph?: {
+  nodes: {
+    id: string;
+    label: string;
+    category?: string;
+    importance?: number;
+  }[];
+  edges: {
+    source: string;
+    target: string;
+    label?: string;
+    strength?: number;
+  }[];
+};
+```
+
+## Connected Concepts
+
+The knowledge graph shows how concepts relate to each other.
+
+### Node Structure
+
+Each **node** represents a learned concept:
+
+```typescript
+// From KnowledgeGraph.tsx:7-12
+interface Node {
+  id: string;
+  label: string;
+  x?: number;
+  y?: number;
+}
+```
+
+<Accordion title="Node Properties">
+  **id**: Unique identifier (e.g., "fractions-intro")
+  
+  **label**: Display name (e.g., "Introduction to Fractions")
+  
+  **category**: Subject area (e.g., "Math", "Science")
+  
+  **importance**: Relative weight (1-10 scale)
+  
+  **x, y**: Position coordinates for layout
+</Accordion>
+
+### Edge Structure
+
+Each **edge** represents a relationship between concepts:
+
+```typescript
+// From KnowledgeGraph.tsx:14-17
+interface Edge {
+  source: string;
+  target: string;
+}
+```
+
+<Accordion title="Edge Properties">
+  **source**: ID of the origin concept
+  
+  **target**: ID of the destination concept
+  
+  **label**: Relationship type (e.g., "builds on", "requires")
+  
+  **strength**: Connection weight (0.0 - 1.0)
+</Accordion>
+
+### Example Graph
+
+```json
+{
+  "nodes": [
+    { "id": "numbers", "label": "Numbers", "category": "Math", "importance": 10 },
+    { "id": "addition", "label": "Addition", "category": "Math", "importance": 8 },
+    { "id": "fractions", "label": "Fractions", "category": "Math", "importance": 7 },
+    { "id": "decimals", "label": "Decimals", "category": "Math", "importance": 6 }
+  ],
+  "edges": [
+    { "source": "numbers", "target": "addition", "label": "enables", "strength": 0.9 },
+    { "source": "numbers", "target": "fractions", "label": "requires", "strength": 1.0 },
+    { "source": "fractions", "target": "decimals", "label": "relates to", "strength": 0.7 }
+  ]
+}
+```
+
+## Progress Visualization
+
+### Circle Layout
+
+Nodes are arranged in a circular layout by default:
+
+```typescript
+// From KnowledgeGraph.tsx:59-78
+useEffect(() => {
+  if (nodes.length === 0) return;
+  
+  // Initialize positions with a simple circle layout if not defined
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.min(width, height) * 0.35;
+  
+  nodes.forEach((node, i) => {
+    if (node.x === undefined || node.y === undefined) {
+      const angle = (i * 2 * Math.PI) / nodes.length;
+      nodePositions.current[node.id] = {
+        x: centerX + radius * Math.cos(angle),
+        y: centerY + radius * Math.sin(angle),
+      };
+    } else {
+      nodePositions.current[node.id] = { x: node.x, y: node.y };
+    }
+  });
+}, [nodes, width, height]);
+```
+
+### Interactive Features
+
+```typescript
+// From KnowledgeGraph.tsx:32-40
+// State for selected node
+const [selectedNode, setSelectedNode] = useState<string | null>(null);
+const [showFullLabels, setShowFullLabels] = useState(false);
+
+// Simple zoom state
+const [zoom, setZoom] = useState(1);
+
+// Handle node selection
+const handleNodePress = (nodeId: string) => {
+  setSelectedNode(selectedNode === nodeId ? null : nodeId);
+};
+```
+
+<CardGroup cols={2}>
+  <Card title="Tap Nodes" icon="hand-pointer">
+    Tap any concept to highlight it and see details
+  </Card>
+  
+  <Card title="Zoom Controls" icon="search-plus">
+    Zoom in/out buttons to explore dense graphs
+  </Card>
+  
+  <Card title="Reset View" icon="undo">
+    Return to default zoom and position
+  </Card>
+  
+  <Card title="Pan Support" icon="arrows-alt">
+    Drag to move the graph around (if implemented)
+  </Card>
+</CardGroup>
+
+### Zoom Controls
+
+```typescript
+// From KnowledgeGraph.tsx:44-56
+// Handle zoom in and out
+const handleZoomIn = () => {
+  setZoom(Math.min(2, zoom + 0.2));
+};
+
+const handleZoomOut = () => {
+  setZoom(Math.max(0.5, zoom - 0.2));
+};
+
+// Handle reset view
+const handleResetView = () => {
+  setZoom(1);
+};
+```
+
+### SVG Rendering
+
+The graph is rendered using React Native SVG:
+
+```typescript
+// From KnowledgeGraph.tsx:98-100
+return (
+  <View style={styles.graphWrapper}>
+    <View style={styles.controlsContainer}>
+      // ... zoom controls
+    </View>
+    <Svg width={width} height={height}>
+      <G>
+        {/* Draw edges first */}
+        {edges.map((edge, index) => {
+          const sourcePos = nodePositions.current[edge.source];
+          const targetPos = nodePositions.current[edge.target];
+          if (!sourcePos || !targetPos) return null;
+          
+          return (
+            <Line
+              key={`edge-${index}`}
+              x1={sourcePos.x}
+              y1={sourcePos.y}
+              x2={targetPos.x}
+              y2={targetPos.y}
+              stroke={colors.divider}
+              strokeWidth={2}
+            />
+          );
+        })}
+        
+        {/* Draw nodes on top */}
+        {nodes.map((node) => {
+          const pos = nodePositions.current[node.id];
+          if (!pos) return null;
+          
+          const isSelected = selectedNode === node.id;
+          
+          return (
+            <G key={`node-${node.id}`}>
+              <Circle
+                cx={pos.x}
+                cy={pos.y}
+                r={isSelected ? 20 : 15}
+                fill={isSelected ? colors.primary : colors.primaryLight}
+                onPress={() => handleNodePress(node.id)}
+              />
+              {showFullLabels && (
+                <SvgText
+                  x={pos.x}
+                  y={pos.y + 25}
+                  fontSize={12}
+                  textAnchor="middle"
+                  fill={colors.textPrimary}
+                >
+                  {node.label}
+                </SvgText>
+              )}
+            </G>
+          );
+        })}
+      </G>
+    </Svg>
+  </View>
+);
+```
+
+## Subject Relationships
+
+### Learner Profile Schema
+
+The knowledge graph is stored in the learner's profile:
+
+```typescript
+// From shared/schema.ts:50-66
+export const learnerProfiles = pgTable("learner_profiles", {
+  id: text("id").primaryKey().notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  gradeLevel: integer("grade_level").notNull(),
+  graph: json("graph").$type<{ nodes: any[], edges: any[] }>(),
+  subjects: json("subjects").$type<string[]>().default(['Math', 'Science']),
+  subjectPerformance: json("subject_performance").$type<Record<string, {
+    score: number,
+    lessonCount: number,
+    lastAttempted: string,
+    masteryLevel: 'beginner' | 'intermediate' | 'advanced'
+  }>>().default({}),
+  recommendedSubjects: json("recommended_subjects").$type<string[]>().default([]),
+  strugglingAreas: json("struggling_areas").$type<string[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+```
+
+### Graph Updates
+
+The knowledge graph is updated after each lesson completion:
+
+```typescript
+// When a lesson is marked DONE, concepts from that lesson are added
+// to the learner's knowledge graph as new nodes and edges
+```
+
+<Info>
+Currently, graph updates happen automatically based on lesson content. Future versions may use more sophisticated algorithms to determine node importance and edge strength.
+</Info>
+
+### Subject-Based Organization
+
+Nodes can be categorized by subject:
+
+```json
+{
+  "nodes": [
+    { "id": "photosynthesis", "label": "Photosynthesis", "category": "Science" },
+    { "id": "algebra", "label": "Algebra Basics", "category": "Math" },
+    { "id": "fractions", "label": "Fractions", "category": "Math" },
+    { "id": "cells", "label": "Cell Structure", "category": "Science" }
+  ],
+  "edges": [
+    { "source": "cells", "target": "photosynthesis", "label": "enables" },
+    { "source": "fractions", "target": "algebra", "label": "prerequisite" }
+  ]
+}
+```
+
+### Performance Tracking by Subject
+
+The profile tracks performance per subject:
+
+```typescript
+// From shared/schema.ts:57-62
+subjectPerformance: json("subject_performance").$type<Record<string, {
+  score: number,
+  lessonCount: number,
+  lastAttempted: string,
+  masteryLevel: 'beginner' | 'intermediate' | 'advanced'
+}>>().default({})
+```
+
+**Example**:
+```json
+{
+  "Math": {
+    "score": 85,
+    "lessonCount": 12,
+    "lastAttempted": "2024-03-15T10:30:00Z",
+    "masteryLevel": "intermediate"
+  },
+  "Science": {
+    "score": 92,
+    "lessonCount": 8,
+    "lastAttempted": "2024-03-14T14:00:00Z",
+    "masteryLevel": "advanced"
+  }
+}
+```
+
+## Empty State
+
+If no concepts have been learned yet:
+
+```typescript
+// From KnowledgeGraph.tsx:88-96
+if (nodes.length === 0) {
+  return (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyText}>
+        No knowledge graph data available yet.
+      </Text>
+    </View>
+  );
+}
+```
+
+<Note>
+The knowledge graph starts empty and grows as the learner completes lessons. Each new lesson adds concepts (nodes) and relationships (edges) to the map.
+</Note>
+
+## Dashboard Display
+
+The learner dashboard shows total concepts learned:
+
+```typescript
+// From learner-dashboard.tsx:143-159
+<TouchableOpacity 
+  style={styles.progressSummary}
+  onPress={() => navigation.navigate('ProgressPage')}
+>
+  <View style={styles.progressIcon}>
+    <BarChart2 size={24} color={colors.onPrimary} />
+  </View>
+  <View style={styles.progressContent}>
+    <Text style={styles.progressTitle}>Your Learning Progress</Text>
+    <Text style={styles.progressText}>
+      {profile?.graph?.nodes?.length 
+        ? `You've learned ${profile.graph.nodes.length} concepts!` 
+        : 'Start learning to see your progress'}
+    </Text>
+  </View>
+</TouchableOpacity>
+```
+
+## Future Enhancements
+
+Potential improvements to the knowledge graph:
+
+<CardGroup cols={2}>
+  <Card title="Force-Directed Layout" icon="project-diagram">
+    Use physics simulation to automatically arrange nodes based on relationships
+  </Card>
+  
+  <Card title="Concept Highlighting" icon="highlighter">
+    Show concepts needing review in different colors
+  </Card>
+  
+  <Card title="Subject Filtering" icon="filter">
+    Toggle visibility of specific subjects
+  </Card>
+  
+  <Card title="Timeline View" icon="clock">
+    Animate graph growth over time
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Concept Mastery" icon="brain" href="/learners/concept-mastery">
+    Learn how mastery tracking works per concept
+  </Card>
+  
+  <Card title="Learner Profile" icon="user" href="/api/learners">
+    See the full learner profile data structure
+  </Card>
+</CardGroup>

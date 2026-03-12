@@ -1,0 +1,477 @@
+---
+title: Learning Goals
+description: Parent-set goals, tracking progress, completion rewards, and motivation system
+icon: target
+---
+
+## Learning Goals Overview
+
+Learning goals in Sunschool are **reward-based incentives** created by parents to motivate learners. Goals encourage sustained engagement by letting learners save points toward tangible rewards.
+
+<Info>
+Goals are different from achievements. **Achievements** are earned automatically for milestones. **Goals** are parent-defined rewards that learners save points toward.
+</Info>
+
+## Parent-Set Goals
+
+Parents create custom reward goals tailored to their child's interests and family values.
+
+### Goal Structure
+
+```typescript
+// From rewards-service.ts:119-148
+export async function createReward(
+  parentId: number,
+  data: {
+    title: string;
+    description?: string;
+    tokenCost: number;
+    category?: string;
+    maxRedemptions?: number | null;
+    imageEmoji?: string;
+    color?: string;
+  }
+) {
+  const { rows } = await pool.query(
+    `INSERT INTO rewards
+       (parent_id, title, description, token_cost, category, max_redemptions, image_emoji, color)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     RETURNING *`,
+    [
+      parentId,
+      data.title,
+      data.description ?? null,
+      data.tokenCost,
+      data.category ?? 'GENERAL',
+      data.maxRedemptions ?? null,
+      data.imageEmoji ?? '🎁',
+      data.color ?? '#4A90D9',
+    ]
+  );
+  return toReward(rows[0]);
+}
+```
+
+### Goal Fields
+
+| Field | Type | Description | Example |
+|-------|------|-------------|----------|
+| `title` | string | Short goal name | "Ice Cream Trip" |
+| `description` | string | Optional details | "Trip to favorite ice cream shop" |
+| `tokenCost` | number | Points needed | 50 |
+| `category` | string | Type of reward | "TREAT", "ACTIVITY", "TOY" |
+| `maxRedemptions` | number | Limit on times earned | 5 (or null for unlimited) |
+| `imageEmoji` | string | Visual icon | "🍦" |
+| `color` | string | Brand color | "#FF6B9D" |
+
+### Goal Categories
+
+Common parent-defined categories:
+
+<CardGroup cols={2}>
+  <Card title="TREATS" icon="ice-cream">
+    Food rewards like ice cream, pizza, or favorite snacks
+  </Card>
+  
+  <Card title="ACTIVITIES" icon="gamepad">
+    Experiences like movie night, park visit, or game time
+  </Card>
+  
+  <Card title="TOYS" icon="gift">
+    Physical items like toys, books, or art supplies
+  </Card>
+  
+  <Card title="PRIVILEGES" icon="star">
+    Special permissions like extra screen time or staying up late
+  </Card>
+</CardGroup>
+
+## Tracking Goal Progress
+
+Learners see their progress toward each goal in real-time.
+
+### Goals Dashboard Strip
+
+The learner home shows a preview of their top goal:
+
+```typescript
+// From learner-home.tsx:35-78
+const GoalsStrip: React.FC<{ learnerId?: number; onPress: () => void; theme: any }> = ({ learnerId, onPress, theme }) => {
+  const { data: goals = [] } = _useQuery<any[]>({
+    queryKey: ['/api/rewards-summary', learnerId],
+    queryFn: () => apiRequest('GET', `/api/rewards-summary?learnerId=${learnerId}`).then(r => r.data),
+    enabled: !!learnerId,
+  });
+  if (!goals.length) return null;
+  const topGoal = goals[0];
+  return (
+    <TouchableOpacity onPress={onPress} style={{ /* ... */ }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+        <Gift size={16} color={theme.colors.primary} />
+        <Text style={{ marginLeft: 6, fontWeight: '700' }}>My Goals</Text>
+        <Text style={{ fontSize: 12, color: theme.colors.primary }}>See all →</Text>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={{ fontSize: 24, marginRight: 8 }}>{topGoal.imageEmoji}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 13, fontWeight: '600' }}>
+            {topGoal.title}
+          </Text>
+          <View style={{ height: 8, backgroundColor: theme.colors.divider, borderRadius: 4 }}>
+            <View style={{ width: `${topGoal.progressPct}%`, backgroundColor: topGoal.color }} />
+          </View>
+          <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+            {topGoal.savedPoints}/{topGoal.tokenCost} pts · {topGoal.progressPct}%
+          </Text>
+        </View>
+      </View>
+      {goals.length > 1 && (
+        <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+          +{goals.length - 1} more goal{goals.length > 2 ? 's' : ''}
+        </Text>
+      )}
+    </TouchableOpacity>
+  );
+};
+```
+
+### Full Goals Page
+
+Tapping "See all" or the goals strip opens the dedicated goals page:
+
+```typescript
+// From learner-goals-page.tsx:40-114
+const GoalCard: React.FC<{
+  goal: RewardGoal;
+  learnerId: number;
+  onSavePoints: (rewardId: string) => void;
+  onRedeem: (rewardId: string) => void;
+  isProcessing: boolean;
+}> = ({ goal, learnerId, onSavePoints, onRedeem, isProcessing }) => {
+  const saved = goal.savedPoints ?? 0;
+  const pct = goal.tokenCost > 0 ? Math.min(100, Math.round((saved / goal.tokenCost) * 100)) : 0;
+  const isComplete = saved >= goal.tokenCost;
+
+  return (
+    <View style={[styles.card, { borderLeftColor: goal.color, borderLeftWidth: 5 }]}>
+      {/* Header */}
+      <View style={styles.cardHeader}>
+        <View style={[styles.emojiCircle, { backgroundColor: goal.color + '22' }]}>
+          <Text style={{ fontSize: 32 }}>{goal.imageEmoji}</Text>
+        </View>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.cardTitle}>{goal.title}</Text>
+          {goal.description && (
+            <Text style={styles.cardDesc}>{goal.description}</Text>
+          )}
+        </View>
+        {isComplete && !goal.hasPendingRedemption && (
+          <View style={[styles.readyBadge, { backgroundColor: goal.color }]}>
+            <Text style={styles.readyBadgeText}>Ready!</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Progress bar */}
+      <View style={styles.progressSection}>
+        <View style={styles.progressLabelRow}>
+          <Text style={styles.progressLabel}>
+            {saved} / {goal.tokenCost} pts saved
+          </Text>
+          <Text style={[styles.progressPct, { color: goal.color }]}>{pct}%</Text>
+        </View>
+        <View style={[styles.progressTrack, { backgroundColor: theme.colors.divider }]}>
+          <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: goal.color }]} />
+        </View>
+      </View>
+
+      {/* Actions */}
+      <View style={styles.cardActions}>
+        {!isComplete && !goal.hasPendingRedemption && (
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => onSavePoints(goal.id)}>
+            <Text style={styles.actionBtnText}>💰 Save Points</Text>
+          </TouchableOpacity>
+        )}
+        {isComplete && !goal.hasPendingRedemption && (
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: goal.color }]}
+            onPress={() => onRedeem(goal.id)}>
+            <Text style={[styles.actionBtnText, { color: '#fff' }]}>🎉 Cash Out!</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+};
+```
+
+### Progress Calculation
+
+```typescript
+// From rewards-service.ts:587-616
+export async function getRewardSummaryForLearner(learnerId: number) {
+  const { rows } = await pool.query(
+    `SELECT r.id, r.title, r.token_cost, r.image_emoji, r.color,
+       COALESCE(gs.saved_points, 0) AS saved_points,
+       COALESCE(rr_pending.cnt, 0) AS pending_redemptions
+     FROM rewards r
+     JOIN users u ON u.id = $1
+     LEFT JOIN reward_goal_savings gs
+       ON gs.reward_id = r.id AND gs.learner_id = $1
+     LEFT JOIN (
+       SELECT reward_id, COUNT(*) AS cnt
+       FROM reward_redemptions
+       WHERE learner_id=$1 AND status='PENDING'
+       GROUP BY reward_id
+     ) rr_pending ON rr_pending.reward_id = r.id
+     WHERE r.parent_id = u.parent_id AND r.is_active = TRUE
+     ORDER BY r.token_cost ASC`,
+    [learnerId]
+  );
+  return rows.map(row => ({
+    id: row.id,
+    title: row.title,
+    tokenCost: row.token_cost,
+    imageEmoji: row.image_emoji ?? '🎁',
+    color: row.color ?? '#4A90D9',
+    savedPoints: row.saved_points ?? 0,
+    hasPendingRedemption: row.pending_redemptions > 0,
+    progressPct: Math.min(100, Math.round(((row.saved_points ?? 0) / row.token_cost) * 100)),
+  }));
+}
+```
+
+<Check>
+**Progress is calculated as**:
+```javascript
+progressPct = Math.min(100, Math.round((savedPoints / tokenCost) * 100))
+```
+Capped at 100% even if learner saves extra points.
+</Check>
+
+## Goal Completion Rewards
+
+When a learner saves enough points for a goal, they can redeem it.
+
+### Redemption Flow
+
+<Steps>
+  <Step title="Goal Reaches 100%">
+    Saved points ≥ token cost
+    
+    **UI Changes**:
+    - "Save Points" button becomes "🎉 Cash Out!"
+    - "Ready!" badge appears on goal card
+    - Button changes to goal's brand color
+  </Step>
+  
+  <Step title="Learner Requests Redemption">
+    Taps "Cash Out!" button
+    
+    ```typescript
+    // From learner-goals-page.tsx:227-234
+    const redeemMutation = useMutation({
+      mutationFn: (rewardId: string) =>
+        apiRequest('POST', `/api/rewards/${rewardId}/redeem?learnerId=${learnerId}`)
+          .then(r => r.data),
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['/api/rewards', learnerId] });
+        queryClient.invalidateQueries({ queryKey: ['/api/redemptions/my', learnerId] });
+      },
+    });
+    ```
+  </Step>
+  
+  <Step title="Request Enters Pending State">
+    **Status**: PENDING
+    
+    **Learner sees**: "⏳ Waiting for parent approval…"
+    
+    **Goal card shows**: "Waiting…" badge in orange
+  </Step>
+  
+  <Step title="Parent Reviews Request">
+    Parent sees notification in their dashboard
+    
+    **Options**:
+    - Approve with optional notes
+    - Reject with explanation
+  </Step>
+  
+  <Step title="Approval: Points Reset">
+    If approved:
+    - Saved points for that goal reset to 0
+    - Learner can earn the same reward again
+    - Parent delivers the actual reward
+    
+    ```typescript
+    // From rewards-service.ts:460-465
+    // Deduct saved_points (reset to 0 so they can earn again)
+    await client.query(
+      `UPDATE reward_goal_savings SET saved_points=0, updated_at=NOW()
+       WHERE learner_id=$1 AND reward_id=$2`,
+      [r.learner_id, r.reward_id]
+    );
+    ```
+  </Step>
+</Steps>
+
+### Repeatable Rewards
+
+Goals are **repeatable by default**:
+
+```typescript
+// From rewards-service.ts:467-476
+// Auto-deactivate if max redemptions reached
+const ur = updatedReward[0];
+if (ur?.max_redemptions && ur.current_redemptions >= ur.max_redemptions) {
+  await client.query(
+    `UPDATE rewards SET is_active = FALSE, updated_at=NOW() WHERE id=$1`,
+    [r.reward_id]
+  );
+  // Refund any other learners' savings for this now-deactivated reward
+  await refundSavingsForReward(client, r.reward_id);
+}
+```
+
+<Info>
+**Repeatable System**:
+- After approval, saved points reset to 0
+- Goal remains active (unless max redemptions reached)
+- Learner can start saving again immediately
+- Parents can set `maxRedemptions` to limit times earned
+</Info>
+
+## Motivation System
+
+Goals use psychological principles to motivate sustained learning.
+
+### Visual Progress
+
+Every goal shows:
+1. **Color-coded progress bar** matching the goal's brand color
+2. **Percentage complete** prominently displayed
+3. **Absolute progress** (e.g., "23/50 pts")
+4. **Emoji icon** for visual appeal
+
+### Immediate Feedback
+
+After each quiz:
+
+```typescript
+// From quiz-page.tsx:241-279
+<Modal visible={showDelegation && !!quizScore && rewardGoals.length > 0}>
+  <View style={styles.delegationOverlay}>
+    <View style={styles.delegationBox}>
+      <Text style={styles.delegationTitle}>
+        🎉 You earned {quizScore?.pointsAwarded ?? 0} pts!
+      </Text>
+      <Text style={styles.delegationSub}>
+        Save them toward a reward goal:
+      </Text>
+      <ScrollView style={{ maxHeight: 240 }}>
+        {rewardGoals.filter((g: any) => g.isActive).map((g: any) => {
+          const pct = Math.min(100, Math.round(((g.savedPoints ?? 0) / g.tokenCost) * 100));
+          return (
+            <TouchableOpacity key={g.id} 
+              onPress={() => { 
+                saveDelegation(g.id, quizScore!.pointsAwarded); 
+                setShowDelegation(false); 
+              }}>
+              <Text>{g.imageEmoji}</Text>
+              <View>
+                <Text>{g.title}</Text>
+                <View style={styles.delegationTrack}>
+                  <View style={[styles.delegationFill, { width: `${pct}%`, backgroundColor: g.color }]} />
+                </View>
+                <Text>{g.savedPoints}/{g.tokenCost}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  </View>
+</Modal>
+```
+
+<Note>
+Immediately after completing a quiz, learners can delegate their new points to a goal while the accomplishment is fresh in their mind.
+</Note>
+
+### Goal Refunds
+
+If parents delete or deactivate a goal, saved points are refunded:
+
+```typescript
+// From rewards-service.ts:68-101
+async function refundSavingsForReward(client: any, rewardId: string) {
+  const { rows: savings } = await client.query(
+    `SELECT learner_id, saved_points FROM reward_goal_savings
+     WHERE reward_id = $1 AND saved_points > 0`,
+    [rewardId]
+  );
+
+  for (const s of savings) {
+    // Credit points back to learner balance
+    await client.query(
+      `UPDATE learner_points
+       SET current_balance = current_balance + $1, last_updated = NOW()
+       WHERE learner_id = $2`,
+      [s.saved_points, s.learner_id]
+    );
+
+    // Record ledger entry for the refund
+    await client.query(
+      `INSERT INTO points_ledger (learner_id, amount, source_type, source_id, description)
+       VALUES ($1, $2, 'GOAL_REFUND', $3, 'Reward removed — saved points refunded')`,
+      [s.learner_id, s.saved_points, rewardId]
+    );
+
+    // Zero out the savings
+    await client.query(
+      `UPDATE reward_goal_savings SET saved_points = 0, updated_at = NOW()
+       WHERE learner_id = $1 AND reward_id = $2`,
+      [s.learner_id, rewardId]
+    );
+  }
+
+  return savings.length;
+}
+```
+
+<Warning>
+**Refund Policy**: When goals are deleted or deactivated, all saved points are automatically returned to learners' general balances with a ledger entry for transparency.
+</Warning>
+
+## Empty State
+
+If no goals exist:
+
+```typescript
+// From learner-goals-page.tsx:272-278
+{goals.length === 0 ? (
+  <View style={styles.empty}>
+    <Text style={{ fontSize: 52 }}>🎁</Text>
+    <Text style={styles.emptyTitle}>No goals yet!</Text>
+    <Text style={styles.emptyDesc}>
+      Ask your parent to add some rewards for you to earn.
+    </Text>
+  </View>
+```
+
+Encourages learners to communicate with parents about desired rewards.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Points System" icon="coins" href="/learners/points-rewards">
+    Learn how to earn and delegate points
+  </Card>
+  
+  <Card title="Parent: Creating Goals" icon="user-plus" href="/parents/rewards">
+    Parent guide to setting up reward goals
+  </Card>
+</CardGroup>

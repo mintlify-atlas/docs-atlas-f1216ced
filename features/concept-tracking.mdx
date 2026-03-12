@@ -1,0 +1,536 @@
+---
+title: Concept Tracking
+description: How Sunschool tracks understanding of individual concepts and skills
+icon: brain
+---
+
+## Overview
+
+Sunschool's concept tracking system tags every quiz question with specific concepts (e.g., "addition", "fractions", "plants") and tracks performance on each concept individually. This enables precise identification of struggling areas and adaptive content recommendations.
+
+## How It Works
+
+<Steps>
+  <Step title="Question Tagging">
+    Each quiz question is automatically tagged with relevant concepts
+  </Step>
+  <Step title="Answer Recording">
+    When answered, both the answer and concept tags are stored
+  </Step>
+  <Step title="Performance Analysis">
+    System calculates accuracy per concept across all questions
+  </Step>
+  <Step title="Mastery Updates">
+    Concept mastery levels are updated after each quiz
+  </Step>
+  <Step title="Reinforcement Identification">
+    Concepts below threshold are flagged for additional practice
+  </Step>
+</Steps>
+
+## Concept Extraction
+
+Concepts are automatically extracted from question text and options:
+
+```typescript
+// From server/services/quiz-tracking-service.ts:47
+export function extractConceptTags(
+  question: QuizQuestion,
+  subject: string
+): string[] {
+  const text = `${question.text} ${question.options.join(' ')}`.toLowerCase();
+  const tags: Set<string> = new Set();
+
+  // Add subject as primary tag
+  tags.add(subject.toLowerCase());
+
+  // Math concepts
+  if (text.match(/\b(add|addition|plus|sum)\b/)) tags.add('addition');
+  if (text.match(/\b(subtract|subtraction|minus|difference)\b/)) tags.add('subtraction');
+  if (text.match(/\b(multiply|multiplication|times|product)\b/)) tags.add('multiplication');
+  if (text.match(/\b(divide|division|split|quotient)\b/)) tags.add('division');
+  if (text.match(/\b(fraction|half|quarter|third)\b/)) tags.add('fractions');
+  if (text.match(/\b(count|counting|number|how many)\b/)) tags.add('counting');
+
+  // Science concepts
+  if (text.match(/\b(plant|plants|grow|seed|leaf)\b/)) tags.add('plants');
+  if (text.match(/\b(animal|animals|bird|fish|mammal)\b/)) tags.add('animals');
+  if (text.match(/\b(water|liquid|solid|gas|ice|steam)\b/)) tags.add('states-of-matter');
+  if (text.match(/\b(hot|cold|heat|temperature|warm)\b/)) tags.add('temperature');
+  if (text.match(/\b(light|dark|shadow|sun)\b/)) tags.add('light');
+  if (text.match(/\b(sound|hear|loud|quiet|noise)\b/)) tags.add('sound');
+
+  // Reading/Language concepts
+  if (text.match(/\b(letter|alphabet|word|spell)\b/)) tags.add('letters');
+  if (text.match(/\b(read|reading|story|book)\b/)) tags.add('reading');
+  if (text.match(/\b(write|writing|sentence)\b/)) tags.add('writing');
+  if (text.match(/\b(rhyme|rhyming|sound)\b/)) tags.add('phonics');
+
+  // General cognitive skills
+  if (text.match(/\b(color|red|blue|green|yellow)\b/)) tags.add('colors');
+  if (text.match(/\b(shape|circle|square|triangle)\b/)) tags.add('shapes');
+  if (text.match(/\b(big|small|large|tiny|size)\b/)) tags.add('size');
+  if (text.match(/\b(compare|same|different|similar)\b/)) tags.add('comparison');
+
+  return Array.from(tags);
+}
+```
+
+### Supported Concept Categories
+
+<Tabs>
+  <Tab title="Mathematics">
+    - addition
+    - subtraction
+    - multiplication
+    - division
+    - fractions
+    - counting
+  </Tab>
+  <Tab title="Science">
+    - plants
+    - animals
+    - states-of-matter
+    - temperature
+    - light
+    - sound
+  </Tab>
+  <Tab title="Language Arts">
+    - letters
+    - reading
+    - writing
+    - phonics
+  </Tab>
+  <Tab title="General Skills">
+    - colors
+    - shapes
+    - size
+    - comparison
+  </Tab>
+</Tabs>
+
+<Info>
+The system uses simple regex pattern matching. As the platform grows, this can be enhanced with NLP (Natural Language Processing) for more sophisticated concept detection.
+</Info>
+
+## Storing Quiz Answers
+
+Each answer is stored with full metadata:
+
+```typescript
+// From server/services/quiz-tracking-service.ts:12
+export interface QuizAnswer {
+  id?: string;
+  learnerId: number;
+  lessonId: string;
+  questionIndex: number;
+  questionText: string;
+  questionHash: string;         // SHA-256 hash for deduplication
+  userAnswer: number;
+  correctAnswer: number;
+  isCorrect: boolean;
+  conceptTags: string[];        // Array of concept tags
+  answeredAt?: Date;
+}
+```
+
+### Storing All Answers from a Quiz
+
+```typescript
+// From server/services/quiz-tracking-service.ts:127
+export async function storeQuizAnswers(
+  learnerId: number,
+  lessonId: string,
+  questions: QuizQuestion[],
+  userAnswers: number[],
+  subject: string
+): Promise<void> {
+  const answersToStore: QuizAnswer[] = questions.map((question, index) => {
+    const questionHash = hashQuestion(question.text);
+    const conceptTags = extractConceptTags(question, subject);
+    const isCorrect = userAnswers[index] === question.correctIndex;
+
+    return {
+      learnerId,
+      lessonId,
+      questionIndex: index,
+      questionText: question.text,
+      questionHash,
+      userAnswer: userAnswers[index],
+      correctAnswer: question.correctIndex,
+      isCorrect,
+      conceptTags,
+      answeredAt: new Date()
+    };
+  });
+
+  // Store all answers
+  for (const answer of answersToStore) {
+    await storeQuizAnswer(answer);
+  }
+}
+```
+
+## Question Hashing
+
+Questions are hashed to detect duplicates and track repeated attempts:
+
+```typescript
+// From server/services/quiz-tracking-service.ts:36
+export function hashQuestion(questionText: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(questionText.toLowerCase().trim())
+    .digest('hex');
+}
+```
+
+<Warning>
+The same question asked multiple times will have the same hash. This allows the system to detect if a learner is seeing the same question repeatedly and track improvement.
+</Warning>
+
+## Concept Performance Analytics
+
+The system calculates performance statistics per concept:
+
+```typescript
+// From server/services/quiz-tracking-service.ts:208
+export async function getConceptPerformance(
+  learnerId: number
+): Promise<Record<string, { correct: number; total: number; accuracy: number }>> {
+  try {
+    const results = await db.execute(sql`
+      SELECT
+        UNNEST(concept_tags) as concept,
+        COUNT(*) as total,
+        SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) as correct
+      FROM quiz_answers
+      WHERE learner_id = ${learnerId}
+      GROUP BY concept
+    `);
+
+    const performance: Record<string, { correct: number; total: number; accuracy: number }> = {};
+
+    for (const row of results.rows as any[]) {
+      const correct = parseInt(row.correct || '0');
+      const total = parseInt(row.total || '0');
+      performance[row.concept] = {
+        correct,
+        total,
+        accuracy: total > 0 ? correct / total : 0
+      };
+    }
+
+    return performance;
+  } catch (error) {
+    console.error('Error calculating concept performance:', error);
+    return {};
+  }
+}
+```
+
+Example output:
+
+```json
+{
+  "addition": {
+    "correct": 18,
+    "total": 22,
+    "accuracy": 0.818
+  },
+  "fractions": {
+    "correct": 5,
+    "total": 12,
+    "accuracy": 0.417
+  },
+  "plants": {
+    "correct": 10,
+    "total": 10,
+    "accuracy": 1.0
+  }
+}
+```
+
+## Querying by Concept
+
+Retrieve all answers for a specific concept:
+
+```typescript
+// From server/services/quiz-tracking-service.ts:186
+export async function getAnswersForConcept(
+  learnerId: number,
+  concept: string
+): Promise<QuizAnswer[]> {
+  try {
+    const results = await db.execute(sql`
+      SELECT *
+      FROM quiz_answers
+      WHERE learner_id = ${learnerId}
+        AND ${concept} = ANY(concept_tags)
+      ORDER BY answered_at DESC
+    `);
+
+    return results.rows as unknown as QuizAnswer[];
+  } catch (error) {
+    console.error(`Error fetching answers for concept ${concept}:`, error);
+    return [];
+  }
+}
+```
+
+<Info>
+This uses PostgreSQL's `ANY(array)` operator to search within the `concept_tags` array column.
+</Info>
+
+## Integration with Mastery System
+
+Concept tracking feeds directly into the mastery system (see [Mastery System](/features/mastery-system)):
+
+```typescript
+// From server/services/mastery-service.ts:30
+export async function updateConceptMastery(
+  learnerId: number,
+  conceptName: string,
+  subject: string,
+  isCorrect: boolean
+): Promise<void> {
+  // Check if mastery record exists
+  const existing = await db.execute(sql`
+    SELECT * FROM concept_mastery
+    WHERE learner_id = ${learnerId}
+      AND concept_name = ${conceptName}
+      AND subject = ${subject}
+  `);
+
+  if (existing.rows.length > 0) {
+    // Update existing record
+    const record = existing.rows[0] as any;
+    const newCorrectCount = record.correct_count + (isCorrect ? 1 : 0);
+    const newTotalCount = record.total_count + 1;
+    const newMasteryLevel = newTotalCount > 0 
+      ? Math.round((newCorrectCount / newTotalCount) * 100) 
+      : 0;
+    const needsReinforcement = newMasteryLevel < MASTERY_THRESHOLD;
+
+    await db.execute(sql`
+      UPDATE concept_mastery
+      SET
+        correct_count = ${newCorrectCount},
+        total_count = ${newTotalCount},
+        mastery_level = ${newMasteryLevel},
+        last_tested = NOW(),
+        needs_reinforcement = ${needsReinforcement}
+      WHERE learner_id = ${learnerId}
+        AND concept_name = ${conceptName}
+        AND subject = ${subject}
+    `);
+  } else {
+    // Create new record
+    const masteryLevel = isCorrect ? 100 : 0;
+    const needsReinforcement = masteryLevel < MASTERY_THRESHOLD;
+
+    await db.execute(sql`
+      INSERT INTO concept_mastery (
+        learner_id, concept_name, subject,
+        correct_count, total_count, mastery_level,
+        last_tested, needs_reinforcement
+      ) VALUES (
+        ${learnerId}, ${conceptName}, ${subject},
+        ${isCorrect ? 1 : 0}, 1, ${masteryLevel},
+        NOW(), ${needsReinforcement}
+      )
+    `);
+  }
+}
+```
+
+## Identifying Struggling Concepts
+
+The system identifies which concepts need reinforcement:
+
+```typescript
+// From server/services/mastery-service.ts:158
+export async function getConceptsNeedingReinforcement(
+  learnerId: number,
+  subject?: string,
+  limit: number = 5
+): Promise<ConceptMastery[]> {
+  try {
+    let query;
+    if (subject) {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+          AND subject = ${subject}
+          AND needs_reinforcement = true
+        ORDER BY mastery_level ASC, last_tested ASC
+        LIMIT ${limit}
+      `;
+    } else {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+          AND needs_reinforcement = true
+        ORDER BY mastery_level ASC, last_tested ASC
+        LIMIT ${limit}
+      `;
+    }
+
+    const results = await db.execute(query);
+    return results.rows.map(row => ({
+      // ... map row to ConceptMastery object
+    }));
+  } catch (error) {
+    console.error('Error fetching concepts needing reinforcement:', error);
+    return [];
+  }
+}
+```
+
+<Card title="Reinforcement Criteria" icon="exclamation-triangle">
+A concept is marked as needing reinforcement when:
+- Mastery level < 70%
+- Has been tested at least once
+
+The query returns the lowest-performing concepts first, prioritizing those that haven't been tested recently.
+</Card>
+
+## Visualization for Parents
+
+The concept tracking data powers several parent-facing visualizations:
+
+<CardGroup cols={2}>
+  <Card title="Concept Heatmap" icon="chart-simple">
+    Visual grid showing mastery levels across all concepts
+  </Card>
+  <Card title="Struggling Areas" icon="triangle-exclamation">
+    List of concepts below 70% with recommended practice
+  </Card>
+  <Card title="Concept Progress" icon="chart-line">
+    Timeline showing how mastery improves over time
+  </Card>
+  <Card title="Subject Breakdown" icon="layer-group">
+    Concepts organized by subject with accuracy percentages
+  </Card>
+</CardGroup>
+
+## Example: Tracking "Fractions" Concept
+
+<Steps>
+  <Step title="Question Asked">
+    "What is 1/2 + 1/4?"
+    
+    Extracted tags: [`math`, `fractions`, `addition`]
+  </Step>
+  <Step title="Answer Recorded">
+    ```json
+    {
+      "learnerId": 42,
+      "questionText": "What is 1/2 + 1/4?",
+      "conceptTags": ["math", "fractions", "addition"],
+      "isCorrect": false
+    }
+    ```
+  </Step>
+  <Step title="Mastery Updated">
+    - `fractions` mastery: 5 correct / 12 total = **42%**
+    - `needs_reinforcement` = **true**
+  </Step>
+  <Step title="Recommendation">
+    System recommends more fraction practice in next lesson selection
+  </Step>
+</Steps>
+
+## Database Schema
+
+### quiz_answers Table
+
+```sql
+CREATE TABLE quiz_answers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  learner_id INTEGER NOT NULL,
+  lesson_id TEXT NOT NULL,
+  question_index INTEGER NOT NULL,
+  question_text TEXT NOT NULL,
+  question_hash TEXT NOT NULL,
+  user_answer INTEGER NOT NULL,
+  correct_answer INTEGER NOT NULL,
+  is_correct BOOLEAN NOT NULL,
+  concept_tags TEXT[] NOT NULL,
+  answered_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_quiz_answers_learner ON quiz_answers(learner_id);
+CREATE INDEX idx_quiz_answers_concepts ON quiz_answers USING GIN(concept_tags);
+```
+
+### concept_mastery Table
+
+```sql
+CREATE TABLE concept_mastery (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  learner_id INTEGER NOT NULL,
+  concept_name TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  correct_count INTEGER DEFAULT 0,
+  total_count INTEGER DEFAULT 0,
+  mastery_level INTEGER DEFAULT 0,  -- 0-100
+  last_tested TIMESTAMP NOT NULL,
+  needs_reinforcement BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(learner_id, concept_name, subject)
+);
+
+CREATE INDEX idx_concept_mastery_learner ON concept_mastery(learner_id);
+CREATE INDEX idx_concept_mastery_reinforcement ON concept_mastery(learner_id, needs_reinforcement);
+```
+
+## API Usage Examples
+
+### Store Quiz Answers
+
+```typescript
+import { storeQuizAnswers } from './services/quiz-tracking-service';
+
+await storeQuizAnswers(
+  learnerId: 42,
+  lessonId: 'lesson_abc123',
+  questions: [...],
+  userAnswers: [0, 2, 1, 3, 0],
+  subject: 'Math'
+);
+```
+
+### Get Concept Performance
+
+```typescript
+import { getConceptPerformance } from './services/quiz-tracking-service';
+
+const performance = await getConceptPerformance(42);
+console.log(`Fractions accuracy: ${performance.fractions.accuracy * 100}%`);
+```
+
+### Get Struggling Concepts
+
+```typescript
+import { getConceptsNeedingReinforcement } from './services/mastery-service';
+
+const struggling = await getConceptsNeedingReinforcement(42, 'Math', 5);
+struggling.forEach(concept => {
+  console.log(`${concept.conceptName}: ${concept.masteryLevel}%`);
+});
+```
+
+## Related Features
+
+<CardGroup cols={3}>
+  <Card title="Mastery System" icon="trophy" href="/features/mastery-system">
+    How mastery levels are calculated and decay
+  </Card>
+  <Card title="Adaptive Learning" icon="chart-line" href="/features/adaptive-learning">
+    Using concept data for personalized recommendations
+  </Card>
+  <Card title="Reports" icon="chart-bar" href="/features/reports">
+    Visual concept performance analytics
+  </Card>
+</CardGroup>

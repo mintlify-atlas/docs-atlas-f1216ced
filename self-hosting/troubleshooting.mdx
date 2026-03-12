@@ -1,0 +1,806 @@
+---
+title: Troubleshooting Guide
+description: Common issues and solutions for self-hosted Sunschool
+icon: bug
+---
+
+## Common Issues
+
+From `ENGINEERING.md`:
+
+> **Database connection:** Check `DATABASE_URL`, Neon dashboard status, connection pool limits in `server/db.ts`
+>
+> **Migrations:** Run `npm run migrate` manually to debug. Check `drizzle/migrations/` exists. Failures are logged but don't block startup.
+>
+> **Quiz errors:** Ensure `quiz_answers` table exists (migrations). Verify learner has active lesson. Check browser console.
+>
+> **Build errors:** `npx tsc --noEmit` to check types. `rm -rf client/dist server/dist` to clear cache. `TS_NODE_TRANSPILE_ONLY=true` for deployment.
+>
+> **Auth issues:** Verify `JWT_SECRET` is set. Check token expiration. Parent users scoped to own learners only.
+
+## Database Connection Problems
+
+### ECONNREFUSED
+
+**Symptom:**
+
+```bash
+Error: connect ECONNREFUSED 127.0.0.1:5432
+```
+
+**Causes:**
+1. PostgreSQL not running
+2. Wrong host/port in `DATABASE_URL`
+3. Firewall blocking connection
+
+**Solutions:**
+
+<Tabs>
+  <Tab title="Local PostgreSQL">
+    ```bash
+    # Check if PostgreSQL is running
+    sudo systemctl status postgresql
+    # or
+    brew services list | grep postgresql
+    
+    # Start PostgreSQL
+    sudo systemctl start postgresql
+    # or
+    brew services start postgresql@15
+    
+    # Test connection
+    psql -U postgres -h localhost -c "SELECT version();"
+    ```
+  </Tab>
+  <Tab title="Neon">
+    ```bash
+    # Verify connection string format
+    echo $DATABASE_URL
+    # Should be: postgresql://user:pass@ep-xxx.region.aws.neon.tech/dbname
+    
+    # Test with psql
+    psql "$DATABASE_URL" -c "SELECT current_database();"
+    
+    # Check Neon dashboard for project status
+    # https://console.neon.tech/
+    ```
+  </Tab>
+  <Tab title="Railway">
+    ```bash
+    # Get current DATABASE_URL from Railway
+    railway variables
+    
+    # Test connection
+    railway run psql $DATABASE_URL -c "SELECT 1;"
+    
+    # Check service status in Railway dashboard
+    ```
+  </Tab>
+</Tabs>
+
+### Authentication Failed
+
+**Symptom:**
+
+```bash
+error: password authentication failed for user "postgres"
+```
+
+**Solution:**
+
+```bash
+# Reset password (local PostgreSQL)
+sudo -u postgres psql
+postgres=# ALTER USER sunschool WITH PASSWORD 'new_secure_password';
+postgres=# \q
+
+# Update .env
+DATABASE_URL="postgresql://sunschool:new_secure_password@localhost:5432/sunschool"
+
+# Test
+psql "$DATABASE_URL" -c "SELECT 1;"
+```
+
+### SSL Required
+
+**Symptom:**
+
+```bash
+error: no pg_hba.conf entry for host, SSL off
+```
+
+**Solution:**
+
+```env
+# Add sslmode to connection string
+DATABASE_URL="postgresql://...?sslmode=require"
+
+# Or set flag
+DATABASE_SSL=true
+```
+
+### Connection Pool Exhausted
+
+**Symptom:**
+
+```bash
+Error: timeout acquiring connection
+Waiting: 5, Idle: 0, Total: 10
+```
+
+**Solution:**
+
+From `server/db.ts`:
+
+```typescript
+// Increase pool size
+export const pool = new Pool({ 
+  connectionString: DATABASE_URL,
+  max: 20,  // Increase from 10
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,  // Increase timeout
+});
+```
+
+**Or close idle connections:**
+
+```bash
+# Find idle connections
+psql $DATABASE_URL -c "SELECT pid, usename, state, query FROM pg_stat_activity WHERE state = 'idle';"
+
+# Kill idle connections
+psql $DATABASE_URL -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = 'idle' AND pid <> pg_backend_pid();"
+```
+
+## AI Provider Failures
+
+### OpenRouter 401 Unauthorized
+
+**Symptom:**
+
+```bash
+Error: OpenRouter API request failed: 401 Unauthorized
+```
+
+**Solution:**
+
+```bash
+# Verify API key
+curl https://openrouter.ai/api/v1/auth/key \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY"
+
+# Should return: {"data":{"label":"..."}}
+
+# If invalid, get new key from:
+# https://openrouter.ai/keys
+
+# Update .env
+OPENROUTER_API_KEY="sk-or-v1-..."
+```
+
+### OpenRouter 402 Insufficient Credits
+
+**Symptom:**
+
+```bash
+Error: OpenRouter API request failed: 402 Payment Required
+Message: Insufficient credits
+```
+
+**Solution:**
+
+1. Add credits at [openrouter.ai/credits](https://openrouter.ai/credits)
+2. Fallback model will be tried automatically:
+
+From `server/config/env.ts`:
+
+```typescript
+export const DEFAULT_SVG_MODEL_FALLBACKS = [
+  'google/gemini-3.1-flash-lite-preview',  // Cheaper fallback
+  'google/gemini-3-flash-preview',
+];
+```
+
+### OpenRouter 404 Model Not Found
+
+**Symptom:**
+
+```bash
+Error: Model 'google/gemini-4-pro' not found
+```
+
+**Solution:**
+
+```bash
+# Check available models
+curl https://openrouter.ai/api/v1/models \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  | jq '.data[].id'
+
+# Update to valid model
+OPENROUTER_SVG_MODEL="google/gemini-3.1-pro-preview"
+```
+
+### Bittensor Connection Timeout
+
+**Symptom:**
+
+```bash
+Bittensor chat failed: Error: timeout after 10000ms
+Falling back to OpenRouter
+```
+
+**Solution:**
+
+From `server/config/flags.ts`:
+
+```env
+# Ensure fallback is enabled
+BITTENSOR_FALLBACK_ENABLED=1
+
+# Or disable Bittensor entirely
+ENABLE_BITTENSOR_SUBNET_1=0
+LLM_PROVIDER=openrouter
+```
+
+**Test Bittensor connection:**
+
+```bash
+curl https://archive.opentensor.ai/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{__typename}"}'
+
+# Should return: {"data":{"__typename":"Query"}}
+```
+
+## Authentication Issues
+
+### Invalid or Expired Token
+
+**Symptom:**
+
+```json
+{
+  "error": "Invalid or expired token"
+}
+```
+
+**Causes:**
+1. Token expired (default 7 days)
+2. JWT_SECRET changed after token issued
+3. Malformed token
+
+**Solutions:**
+
+```bash
+# Check token expiry
+node -e "
+const jwt = require('jsonwebtoken');
+const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
+const decoded = jwt.decode(token);
+console.log('Expires:', new Date(decoded.exp * 1000));
+"
+
+# User must re-login to get new token
+curl -X POST http://localhost:5000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"password"}'
+```
+
+### Forbidden (403)
+
+**Symptom:**
+
+```json
+{
+  "error": "Forbidden"
+}
+```
+
+**Cause:** User role doesn't have permission for the endpoint.
+
+From `server/routes.ts`:
+
+```typescript
+// Admin-only endpoint
+app.get("/api/parents", hasRole(["ADMIN"]), ...)
+
+// Parent trying to access admin endpoint = 403
+```
+
+**Solution:**
+
+```bash
+# Check user role
+curl http://localhost:5000/api/user \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq '.role'
+
+# If wrong role, promote user (database)
+psql $DATABASE_URL -c \
+  "UPDATE users SET role = 'ADMIN' WHERE username = 'youruser';"
+```
+
+### Parent Can't Access Learner Data
+
+**Symptom:**
+
+```json
+{
+  "error": "Not authorized to view this learner's lessons"
+}
+```
+
+**Cause:** Learner doesn't belong to parent.
+
+**Solution:**
+
+```bash
+# Check parent-child relationship
+psql $DATABASE_URL -c \
+  "SELECT u.id, u.name, u.role, u.parent_id 
+   FROM users u 
+   WHERE u.role = 'LEARNER' 
+   ORDER BY u.parent_id;"
+
+# Fix parent_id if wrong
+psql $DATABASE_URL -c \
+  "UPDATE users 
+   SET parent_id = (SELECT id FROM users WHERE username = 'parent_user') 
+   WHERE id = 123;"
+```
+
+## Migration Problems
+
+### Migration Already Applied
+
+**Symptom:**
+
+```bash
+Error: relation "quiz_answers" already exists
+```
+
+**Cause:** Migration ran but wasn't recorded in `drizzle_migrations`.
+
+**Solution:**
+
+```bash
+# Check what's recorded
+psql $DATABASE_URL -c \
+  "SELECT * FROM drizzle_migrations ORDER BY created_at DESC;"
+
+# Check if table exists
+psql $DATABASE_URL -c "\dt+ quiz_answers"
+
+# Manually mark migration as applied
+psql $DATABASE_URL -c \
+  "INSERT INTO drizzle_migrations (hash, created_at) 
+   VALUES ('0004_quiz_answers', NOW());"
+```
+
+### Constraint Violation During Migration
+
+**Symptom:**
+
+```bash
+Error: check constraint "score_range" is violated by some row
+```
+
+**Cause:** Existing data doesn't meet new constraint.
+
+**Solution:**
+
+```bash
+# Find violating rows
+psql $DATABASE_URL -c \
+  "SELECT id, score FROM lessons WHERE score < 0 OR score > 100;"
+
+# Fix data
+psql $DATABASE_URL -c \
+  "UPDATE lessons SET score = 0 WHERE score < 0;"
+
+psql $DATABASE_URL -c \
+  "UPDATE lessons SET score = 100 WHERE score > 100;"
+
+# Re-run migration
+npm run migrate
+```
+
+## Build Errors
+
+### TypeScript Compilation Errors
+
+**Symptom:**
+
+```bash
+error TS2339: Property 'role' does not exist on type 'User'
+```
+
+**Solution:**
+
+```bash
+# Check types
+npx tsc --noEmit
+
+# Clear cache
+rm -rf node_modules/.cache
+rm -rf client/dist server/dist
+
+# Reinstall dependencies
+npm install
+
+# Rebuild
+npm run build
+```
+
+### Vite Build Fails
+
+**Symptom:**
+
+```bash
+Error: Cannot find module '@/components/Header'
+```
+
+**Solution:**
+
+```bash
+# Check Vite config (client/vite.config.ts)
+# Verify path aliases
+
+# Clear Vite cache
+rm -rf client/.vite
+rm -rf client/dist
+
+# Rebuild
+cd client && npx vite build
+```
+
+### Deploy Build Timeout
+
+**Symptom:**
+
+```bash
+Railway build timeout after 10 minutes
+```
+
+**Solution:**
+
+From `ENGINEERING.md`:
+
+> `TS_NODE_TRANSPILE_ONLY=true` for deployment.
+
+```env
+# Add to Railway environment variables
+TS_NODE_TRANSPILE_ONLY=true
+```
+
+In `package.json`:
+
+```json
+{
+  "scripts": {
+    "deploy": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_PROJECT=tsconfig.deploy.json ts-node server/index.ts"
+  }
+}
+```
+
+## Lesson Generation Issues
+
+### Lesson Generation Fails with 503
+
+**Symptom:**
+
+```json
+{
+  "error": "Lesson generation failed after multiple attempts. Please try again."
+}
+```
+
+**Causes:**
+1. AI provider API down
+2. Rate limit exceeded
+3. Invalid API key
+4. Network timeout
+
+**Debugging:**
+
+```bash
+# Check server logs for specific error
+railway logs --tail 50 | grep "Lesson"
+
+# Test OpenRouter directly
+curl https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "google/gemini-3.1-pro-preview",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+### Lesson Contains Placeholder Content
+
+From `ENGINEERING.md`:
+
+> `validateLessonSpec()` rejects placeholder/stub content — generation failures return 503 (never save stubs)
+
+**Symptom:** Lesson generation succeeds but contains "Lorem ipsum" or "[Placeholder]".
+
+**Cause:** Validation not working properly.
+
+**Solution:**
+
+Check `server/services/lesson-validator.ts`:
+
+```typescript
+// Should reject placeholders
+const placeholderPatterns = [
+  /lorem ipsum/i,
+  /\[placeholder\]/i,
+  /\[insert.*here\]/i,
+  /\[TODO\]/i,
+];
+
+for (const pattern of placeholderPatterns) {
+  if (pattern.test(content)) {
+    throw new Error('Lesson contains placeholder content');
+  }
+}
+```
+
+### Images Not Generating
+
+**Symptom:** Lessons created without images.
+
+**Cause:** Background image generation failing silently.
+
+**Debugging:**
+
+```bash
+# Check logs for image generation
+railway logs | grep "BG.*images"
+
+# Should see:
+# [BG] Images generated for lesson abc-123
+
+# If not, check:
+echo $ENABLE_SVG_LLM
+echo $IMAGE_PROVIDER
+echo $MAX_IMAGES_PER_LESSON
+```
+
+**Solution:**
+
+```env
+# Enable image generation
+ENABLE_SVG_LLM=1
+IMAGE_PROVIDER=svg-llm
+MAX_IMAGES_PER_LESSON=4
+IMAGE_GENERATION_TIMEOUT=15000
+```
+
+## Quiz Errors
+
+From `ENGINEERING.md`:
+
+> **Quiz errors:** Ensure `quiz_answers` table exists (migrations). Verify learner has active lesson. Check browser console.
+
+### Quiz Submission Fails
+
+**Symptom:**
+
+```json
+{
+  "error": "Lesson not found"
+}
+```
+
+**Debugging:**
+
+```bash
+# Check if learner has active lesson
+psql $DATABASE_URL -c \
+  "SELECT id, learner_id, status, subject 
+   FROM lessons 
+   WHERE learner_id = 123 AND status = 'ACTIVE';"
+
+# Should return one row
+# If no results, create new lesson via UI or API
+```
+
+### Points Not Awarded
+
+**Symptom:** Quiz submitted successfully but no points added.
+
+**Debugging:**
+
+```bash
+# Check points_ledger
+psql $DATABASE_URL -c \
+  "SELECT * FROM points_ledger 
+   WHERE learner_id = 123 
+   ORDER BY created_at DESC 
+   LIMIT 5;"
+
+# Check learner_points
+psql $DATABASE_URL -c \
+  "SELECT * FROM learner_points WHERE learner_id = 123;"
+```
+
+**Solution:** Tables might not exist (migration issue).
+
+```bash
+# Run migrations
+npm run migrate
+
+# Verify tables exist
+psql $DATABASE_URL -c "\dt+ points_ledger learner_points"
+```
+
+## Performance Issues
+
+### Slow Response Times
+
+**Symptom:** API requests taking > 5 seconds.
+
+**Debugging:**
+
+```bash
+# Check database query performance
+psql $DATABASE_URL -c "
+SELECT 
+  calls, 
+  mean_exec_time, 
+  query 
+FROM pg_stat_statements 
+ORDER BY mean_exec_time DESC 
+LIMIT 10;
+"
+
+# Enable query logging (PostgreSQL)
+psql $DATABASE_URL -c "
+ALTER DATABASE sunschool SET log_statement = 'all';
+ALTER DATABASE sunschool SET log_duration = on;
+"
+```
+
+**Solutions:**
+
+1. **Add missing indexes:**
+
+```sql
+CREATE INDEX idx_lessons_learner_status ON lessons(learner_id, status);
+CREATE INDEX idx_quiz_answers_learner_date ON quiz_answers(learner_id, answered_at DESC);
+```
+
+2. **Optimize queries:**
+
+```typescript
+// Bad: N+1 query problem
+for (const lesson of lessons) {
+  const learner = await storage.getUser(lesson.learnerId);
+}
+
+// Good: Join or batch query
+const lessons = await db
+  .select()
+  .from(lessons)
+  .leftJoin(users, eq(lessons.learnerId, users.id));
+```
+
+### High Memory Usage
+
+**Symptom:**
+
+```bash
+FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+```
+
+**Solution:**
+
+```bash
+# Increase Node.js memory limit
+NODE_OPTIONS="--max-old-space-size=2048"  # 2GB
+
+# Add to Railway environment variables
+# or to package.json:
+{
+  "scripts": {
+    "start": "node --max-old-space-size=2048 dist/server/index.js"
+  }
+}
+```
+
+**Check for memory leaks:**
+
+```typescript
+// Add to server
+setInterval(() => {
+  const usage = process.memoryUsage();
+  console.log(`Memory: ${Math.round(usage.heapUsed / 1024 / 1024)} MB`);
+  if (usage.heapUsed > 1500 * 1024 * 1024) {  // 1.5GB
+    console.warn('High memory usage detected');
+  }
+}, 60000);  // Every minute
+```
+
+## Debugging Workflow
+
+<Steps>
+  <Step title="Check Server Logs">
+    ```bash
+    # Railway
+    railway logs --tail 100
+    
+    # Local
+    npm run dev
+    # Watch console output
+    ```
+  </Step>
+  <Step title="Test Database Connection">
+    ```bash
+    psql "$DATABASE_URL" -c "SELECT current_database();"
+    ```
+  </Step>
+  <Step title="Verify Environment Variables">
+    ```bash
+    # Check required vars are set
+    echo $DATABASE_URL
+    echo $JWT_SECRET
+    echo $OPENROUTER_API_KEY
+    ```
+  </Step>
+  <Step title="Check Health Endpoint">
+    ```bash
+    curl http://localhost:5000/api/healthcheck
+    ```
+  </Step>
+  <Step title="Review Recent Migrations">
+    ```bash
+    psql $DATABASE_URL -c \
+      "SELECT * FROM drizzle_migrations 
+       ORDER BY created_at DESC LIMIT 5;"
+    ```
+  </Step>
+  <Step title="Test API Endpoints">
+    ```bash
+    # Login
+    TOKEN=$(curl -X POST http://localhost:5000/api/login \
+      -H "Content-Type: application/json" \
+      -d '{"username":"admin","password":"password"}' \
+      | jq -r '.token')
+    
+    # Get user
+    curl http://localhost:5000/api/user \
+      -H "Authorization: Bearer $TOKEN"
+    ```
+  </Step>
+</Steps>
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/allonethingxyz/sunschool/issues">
+    Report bugs or ask questions
+  </Card>
+  <Card title="Discussions" icon="comments" href="https://github.com/allonethingxyz/sunschool/discussions">
+    Community support and feature requests
+  </Card>
+  <Card title="Documentation" icon="book" href="/introduction">
+    Full documentation and guides
+  </Card>
+  <Card title="All One Thing Labs" icon="globe" href="https://allonething.xyz">
+    Contact the development team
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Monitoring" icon="chart-line" href="/self-hosting/monitoring">
+    Set up monitoring to catch issues early
+  </Card>
+  <Card title="Security" icon="shield" href="/self-hosting/security">
+    Review security best practices
+  </Card>
+</CardGroup>

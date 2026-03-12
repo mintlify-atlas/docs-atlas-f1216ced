@@ -1,0 +1,510 @@
+---
+title: Rewards System
+description: Parent-managed rewards catalog and redemption workflow
+icon: gift
+---
+
+## Overview
+
+Sunschool's rewards system allows parents to create real-world incentives that learners can work toward. Learners save points toward specific rewards, request redemption when ready, and parents approve or reject requests.
+
+## Reward Lifecycle
+
+<Steps>
+  <Step title="Parent Creates Reward">
+    Parent defines a reward with title, description, point cost, and optional limits
+  </Step>
+  <Step title="Learner Saves Points">
+    Learner delegates points from general balance toward the reward goal
+  </Step>
+  <Step title="Goal Reached">
+    When saved points ≥ reward cost, learner can request redemption
+  </Step>
+  <Step title="Parent Reviews">
+    Parent approves or rejects the redemption request
+  </Step>
+  <Step title="Reward Fulfilled">
+    On approval, saved points reset to 0 and learner can start saving again (repeatable)
+  </Step>
+</Steps>
+
+## Creating Rewards
+
+### Reward Fields
+
+```typescript
+// From server/services/rewards-service.ts:120
+export async function createReward(
+  parentId: number,
+  data: {
+    title: string;                    // "30 minutes extra screen time"
+    description?: string;             // "Watch a movie or play a game"
+    tokenCost: number;                // 500 points
+    category?: string;                // "SCREEN_TIME", "TOYS", "ACTIVITIES"
+    maxRedemptions?: number | null;   // null = unlimited, or set a limit
+    imageEmoji?: string;              // "🎮" for display
+    color?: string;                   // "#4A90D9" for UI theming
+  }
+)
+```
+
+### Example Rewards
+
+<CardGroup cols={2}>
+  <Card title="Screen Time" icon="tv">
+    **Cost**: 500 points
+    
+    **Description**: 30 extra minutes of TV or gaming
+    
+    **Max Redemptions**: Unlimited
+    
+    **Emoji**: 📺
+  </Card>
+  
+  <Card title="Ice Cream Trip" icon="ice-cream">
+    **Cost**: 1000 points
+    
+    **Description**: Visit the ice cream shop
+    
+    **Max Redemptions**: 4 per month
+    
+    **Emoji**: 🍦
+  </Card>
+  
+  <Card title="New Book" icon="book">
+    **Cost**: 2000 points
+    
+    **Description**: Choose a new book from the bookstore
+    
+    **Max Redemptions**: 1 per reward
+    
+    **Emoji**: 📖
+  </Card>
+  
+  <Card title="Movie Night" icon="popcorn">
+    **Cost**: 1500 points
+    
+    **Description**: Family movie night with popcorn
+    
+    **Max Redemptions**: Unlimited
+    
+    **Emoji**: 🍿
+  </Card>
+</CardGroup>
+
+### Reward Categories
+
+Recommended categories for organization:
+
+- `SCREEN_TIME`: Extra device usage
+- `TOYS`: Physical toys or games
+- `ACTIVITIES`: Outings, special activities
+- `TREATS`: Food treats, desserts
+- `PRIVILEGES`: Special privileges (stay up late, etc.)
+- `EXPERIENCES`: Events, trips
+- `GENERAL`: Uncategorized rewards
+
+## Saving Points Toward Goals
+
+Learners can delegate points from their general balance to specific reward goals:
+
+```typescript
+// From server/services/rewards-service.ts:282
+export async function delegatePointsToGoal(
+  learnerId: number,
+  rewardId: string,
+  points: number
+) {
+  if (points <= 0) throw new Error('Points must be positive');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Check balance
+    const { rows: balRows } = await client.query(
+      `SELECT current_balance FROM learner_points WHERE learner_id=$1`,
+      [learnerId]
+    );
+    const balance = balRows[0]?.current_balance ?? 0;
+    if (balance < points) throw new Error('Insufficient balance');
+
+    // 2. Deduct from learner_points
+    await client.query(
+      `UPDATE learner_points
+       SET current_balance = current_balance - $1, last_updated = NOW()
+       WHERE learner_id = $2`,
+      [points, learnerId]
+    );
+
+    // 3. Record ledger entry
+    await client.query(
+      `INSERT INTO points_ledger (learner_id, amount, source_type, source_id, description)
+       VALUES ($1, $2, 'GOAL_DELEGATION', $3, 'Points saved toward reward goal')`,
+      [learnerId, -points, rewardId]
+    );
+
+    // 4. Upsert goal savings
+    await client.query(
+      `INSERT INTO reward_goal_savings (learner_id, reward_id, saved_points)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (learner_id, reward_id)
+       DO UPDATE SET saved_points = reward_goal_savings.saved_points + $3, 
+                     updated_at = NOW()`,
+      [learnerId, rewardId, points]
+    );
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+```
+
+<Info>
+Delegating points moves them from the learner's general balance into a specific reward goal. They cannot be used for other rewards until the current goal is completed or the reward is deleted (which refunds the points).
+</Info>
+
+## Redemption Workflow
+
+### Requesting Redemption
+
+```typescript
+// From server/services/rewards-service.ts:338
+export async function requestRedemption(
+  learnerId: number, 
+  rewardId: string
+) {
+  // 1. Verify savings ≥ reward cost
+  const { rows: rewardRows } = await pool.query(
+    `SELECT token_cost FROM rewards WHERE id=$1 AND is_active=TRUE`,
+    [rewardId]
+  );
+  if (!rewardRows[0]) throw new Error('Reward not found');
+  const tokenCost = rewardRows[0].token_cost;
+
+  const { rows: savingsRows } = await pool.query(
+    `SELECT saved_points FROM reward_goal_savings 
+     WHERE learner_id=$1 AND reward_id=$2`,
+    [learnerId, rewardId]
+  );
+  const savedPoints = savingsRows[0]?.saved_points ?? 0;
+  if (savedPoints < tokenCost) {
+    throw new Error(`Need ${tokenCost} saved points, have ${savedPoints}`);
+  }
+
+  // 2. Check for existing pending request
+  const { rows: existingRows } = await pool.query(
+    `SELECT id FROM reward_redemptions
+     WHERE learner_id=$1 AND reward_id=$2 AND status='PENDING'`,
+    [learnerId, rewardId]
+  );
+  if (existingRows[0]) throw new Error('Redemption already pending');
+
+  // 3. Create redemption request
+  const { rows } = await pool.query(
+    `INSERT INTO reward_redemptions (learner_id, reward_id, tokens_spent, status)
+     VALUES ($1, $2, $3, 'PENDING')
+     RETURNING *`,
+    [learnerId, rewardId, tokenCost]
+  );
+  return toRedemption(rows[0]);
+}
+```
+
+### Redemption States
+
+<Tabs>
+  <Tab title="PENDING">
+    Request submitted, waiting for parent approval
+  </Tab>
+  <Tab title="APPROVED">
+    Parent approved — reward will be fulfilled
+  </Tab>
+  <Tab title="REJECTED">
+    Parent rejected — points remain saved
+  </Tab>
+</Tabs>
+
+## Parent Approval
+
+### Approving a Redemption
+
+```typescript
+// From server/services/rewards-service.ts:424
+export async function approveRedemption(
+  redemptionId: string,
+  parentId: number,
+  notes?: string
+) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Verify the redemption belongs to this parent
+    const { rows: rRows } = await client.query(
+      `SELECT rr.*, r.token_cost, r.max_redemptions, r.current_redemptions
+       FROM reward_redemptions rr
+       JOIN rewards r ON r.id = rr.reward_id
+       WHERE rr.id=$1 AND r.parent_id=$2 AND rr.status='PENDING'`,
+      [redemptionId, parentId]
+    );
+    if (!rRows[0]) throw new Error('Redemption not found or not pending');
+    const r = rRows[0];
+
+    // 2. Approve
+    await client.query(
+      `UPDATE reward_redemptions
+       SET status='APPROVED', approved_at=NOW(), completed_at=NOW(), parent_notes=$1
+       WHERE id=$2`,
+      [notes ?? null, redemptionId]
+    );
+
+    // 3. Increment reward.current_redemptions
+    const { rows: updatedReward } = await client.query(
+      `UPDATE rewards SET current_redemptions = current_redemptions + 1, 
+                          updated_at=NOW()
+       WHERE id=$1
+       RETURNING current_redemptions, max_redemptions`,
+      [r.reward_id]
+    );
+
+    // 4. Deduct saved_points (reset to 0 so they can earn again)
+    await client.query(
+      `UPDATE reward_goal_savings SET saved_points=0, updated_at=NOW()
+       WHERE learner_id=$1 AND reward_id=$2`,
+      [r.learner_id, r.reward_id]
+    );
+
+    // 5. Auto-deactivate if max redemptions reached
+    const ur = updatedReward[0];
+    if (ur?.max_redemptions && ur.current_redemptions >= ur.max_redemptions) {
+      await client.query(
+        `UPDATE rewards SET is_active = FALSE, updated_at=NOW() WHERE id=$1`,
+        [r.reward_id]
+      );
+      // Refund any other learners' savings for this now-deactivated reward
+      await refundSavingsForReward(client, r.reward_id);
+    }
+
+    await client.query('COMMIT');
+    return { success: true, learnerId: r.learner_id, rewardId: r.reward_id };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+```
+
+<Warning>
+When a reward is approved:
+1. Saved points are reset to **0** (not refunded to general balance)
+2. The reward can be earned again (repeatable)
+3. If `max_redemptions` is set and reached, the reward auto-deactivates
+</Warning>
+
+### Rejecting a Redemption
+
+```typescript
+// From server/services/rewards-service.ts:488
+export async function rejectRedemption(
+  redemptionId: string,
+  parentId: number,
+  notes?: string
+) {
+  const { rows: rRows } = await pool.query(
+    `SELECT rr.learner_id, rr.reward_id, rr.tokens_spent
+     FROM reward_redemptions rr
+     JOIN rewards r ON r.id = rr.reward_id
+     WHERE rr.id=$1 AND r.parent_id=$2 AND rr.status='PENDING'`,
+    [redemptionId, parentId]
+  );
+  if (!rRows[0]) throw new Error('Redemption not found');
+
+  await pool.query(
+    `UPDATE reward_redemptions
+     SET status='REJECTED', rejected_at=NOW(), parent_notes=$1
+     WHERE id=$2`,
+    [notes ?? null, redemptionId]
+  );
+  return { success: true };
+}
+```
+
+<Info>
+When a redemption is rejected, the saved points **remain saved** toward that reward. The learner can request again later.
+</Info>
+
+## Refund System
+
+If a reward is deleted or deactivated, saved points are automatically refunded:
+
+```typescript
+// From server/services/rewards-service.ts:69
+async function refundSavingsForReward(client: any, rewardId: string) {
+  const { rows: savings } = await client.query(
+    `SELECT learner_id, saved_points FROM reward_goal_savings
+     WHERE reward_id = $1 AND saved_points > 0`,
+    [rewardId]
+  );
+
+  for (const s of savings) {
+    // Credit points back to learner balance
+    await client.query(
+      `UPDATE learner_points
+       SET current_balance = current_balance + $1, last_updated = NOW()
+       WHERE learner_id = $2`,
+      [s.saved_points, s.learner_id]
+    );
+
+    // Record ledger entry for the refund
+    await client.query(
+      `INSERT INTO points_ledger (learner_id, amount, source_type, source_id, description)
+       VALUES ($1, $2, 'GOAL_REFUND', $3, 'Reward removed — saved points refunded')`,
+      [s.learner_id, s.saved_points, rewardId]
+    );
+
+    // Zero out the savings
+    await client.query(
+      `UPDATE reward_goal_savings SET saved_points = 0, updated_at = NOW()
+       WHERE learner_id = $1 AND reward_id = $2`,
+      [s.learner_id, rewardId]
+    );
+  }
+
+  return savings.length;
+}
+```
+
+## Max Redemptions
+
+Rewards can have optional redemption limits:
+
+<Tabs>
+  <Tab title="Unlimited">
+    `maxRedemptions: null`
+    
+    Learner can earn this reward as many times as they want.
+  </Tab>
+  <Tab title="One-Time">
+    `maxRedemptions: 1`
+    
+    After first redemption, reward auto-deactivates.
+  </Tab>
+  <Tab title="Limited">
+    `maxRedemptions: 4`
+    
+    Can be redeemed 4 times, then auto-deactivates.
+  </Tab>
+</Tabs>
+
+### Auto-Deactivation
+
+When `current_redemptions >= max_redemptions`:
+
+1. Reward `is_active` set to `FALSE`
+2. All learners' saved points for that reward are refunded
+3. Reward no longer appears in learner's available rewards
+
+## Reward Progress Tracking
+
+Learners can see their progress toward each reward:
+
+```typescript
+// From server/services/rewards-service.ts:587
+export async function getRewardSummaryForLearner(learnerId: number) {
+  const { rows } = await pool.query(
+    `SELECT r.id, r.title, r.token_cost, r.image_emoji, r.color,
+       COALESCE(gs.saved_points, 0) AS saved_points,
+       COALESCE(rr_pending.cnt, 0) AS pending_redemptions
+     FROM rewards r
+     JOIN users u ON u.id = $1
+     LEFT JOIN reward_goal_savings gs
+       ON gs.reward_id = r.id AND gs.learner_id = $1
+     LEFT JOIN (
+       SELECT reward_id, COUNT(*) AS cnt
+       FROM reward_redemptions
+       WHERE learner_id=$1 AND status='PENDING'
+       GROUP BY reward_id
+     ) rr_pending ON rr_pending.reward_id = r.id
+     WHERE r.parent_id = u.parent_id AND r.is_active = TRUE
+     ORDER BY r.token_cost ASC`,
+    [learnerId]
+  );
+  return rows.map(row => ({
+    id: row.id,
+    title: row.title,
+    tokenCost: row.token_cost,
+    imageEmoji: row.image_emoji ?? '🎁',
+    color: row.color ?? '#4A90D9',
+    savedPoints: row.saved_points ?? 0,
+    hasPendingRedemption: row.pending_redemptions > 0,
+    progressPct: Math.min(100, Math.round(
+      ((row.saved_points ?? 0) / row.token_cost) * 100
+    )),
+  }));
+}
+```
+
+Example response:
+
+```json
+[
+  {
+    "id": "reward_123",
+    "title": "30 minutes screen time",
+    "tokenCost": 500,
+    "imageEmoji": "📺",
+    "color": "#4A90D9",
+    "savedPoints": 350,
+    "hasPendingRedemption": false,
+    "progressPct": 70
+  }
+]
+```
+
+## Best Practices for Parents
+
+<AccordionGroup>
+  <Accordion title="Set Realistic Costs">
+    Consider how much effort is required. A 30-minute activity should cost less than a major purchase. Typical ranges:
+    - Small privileges: 200-500 points
+    - Medium treats: 500-1500 points
+    - Large rewards: 1500-5000 points
+  </Accordion>
+  
+  <Accordion title="Create Variety">
+    Offer rewards at different price points so learners have both short-term and long-term goals to work toward.
+  </Accordion>
+  
+  <Accordion title="Be Consistent">
+    Approve redemptions promptly and consistently. If a learner meets the criteria, honor the reward.
+  </Accordion>
+  
+  <Accordion title="Use Max Redemptions Wisely">
+    For expensive or one-time items ("New bicycle"), use `maxRedemptions: 1`. For repeatable treats, use `null` (unlimited).
+  </Accordion>
+  
+  <Accordion title="Add Descriptive Details">
+    Clear descriptions help learners understand exactly what they're working toward.
+  </Accordion>
+</AccordionGroup>
+
+## Related Features
+
+<CardGroup cols={3}>
+  <Card title="Points System" icon="coins" href="/features/points-system">
+    How points are earned and tracked
+  </Card>
+  <Card title="Achievements" icon="trophy" href="/features/achievements">
+    Bonus points from milestones
+  </Card>
+  <Card title="Reports" icon="chart-bar" href="/features/reports">
+    Track redemption history and patterns
+  </Card>
+</CardGroup>

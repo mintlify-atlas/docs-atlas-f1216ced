@@ -1,0 +1,312 @@
+---
+title: Parent Dashboard Guide
+description: Navigate the parent dashboard and understand all available features
+---
+
+# Parent Dashboard
+
+The parent dashboard is your central hub for managing all your children's learning experiences. It provides a consolidated view of all learner accounts with quick access to key features.
+
+## Dashboard Layout
+
+The dashboard consists of several key sections:
+
+### Welcome Header
+
+```typescript
+// From dashboard-page.tsx:255
+<Text style={styles.welcomeText}>Welcome, {user?.name || 'User'}!</Text>
+```
+
+A personalized greeting displays your name and sets the context for the dashboard.
+
+### Child Cards
+
+Each child has a dedicated card showing real-time information:
+
+<Frame>
+  <img src="/images/child-card-example.png" alt="Child card showing stats" />
+</Frame>
+
+#### Card Components
+
+From `dashboard-page.tsx:76-92`, each card includes:
+
+1. **Avatar Circle** - Displays the first letter of the child's name
+2. **Name & Grade** - Shows the child's full name and current grade level
+3. **Stats Row** - Three key metrics displayed side-by-side
+4. **Action Button** - "Start Learning" to switch into learner mode
+
+```typescript
+<View style={styles.childCard}>
+  {/* Avatar with first letter */}
+  <View style={styles.childAvatar}>
+    <Text style={styles.childAvatarText}>
+      {learner.name?.charAt(0)?.toUpperCase() ?? '?'}
+    </Text>
+  </View>
+  
+  {/* Name and grade badge */}
+  <View style={styles.childNameContainer}>
+    <Text style={styles.childName}>{learner.name}</Text>
+    {gradeLabel && (
+      <View style={styles.gradeBadge}>
+        <Text style={styles.gradeBadgeText}>{gradeLabel}</Text>
+      </View>
+    )}
+  </View>
+</View>
+```
+
+### Quick Stats Display
+
+Each child card shows three metrics:
+
+<CardGroup cols={3}>
+  <Card title="Lessons" icon="book-open">
+    Total number of completed lessons
+    
+    ```typescript
+    lessonsCompleted = report?.analytics?.lessonsCompleted ?? 0
+    ```
+  </Card>
+  
+  <Card title="Avg Score" icon="chart-bar">
+    Average score across all completed lessons
+    
+    Calculated automatically if not provided
+  </Card>
+  
+  <Card title="Achievements" icon="trophy">
+    Total achievements earned
+    
+    ```typescript
+    achievementsCount = report?.analytics?.achievementsCount ?? 0
+    ```
+  </Card>
+</CardGroup>
+
+## Understanding Child Status
+
+From `dashboard-page.tsx:95-123`, the stats row displays:
+
+```typescript
+<View style={styles.childStatsRow}>
+  <View style={styles.childStat}>
+    <BookOpen size={14} color={colors.textSecondary} />
+    <Text style={styles.childStatValue}>{lessonsCompleted}</Text>
+    <Text style={styles.childStatLabel}>Lessons</Text>
+  </View>
+
+  <View style={styles.childStatDivider} />
+
+  <View style={styles.childStat}>
+    <BarChart2 size={14} color={colors.textSecondary} />
+    <Text style={styles.childStatValue}>
+      {avgScore !== null ? `${avgScore}%` : '--'}
+    </Text>
+    <Text style={styles.childStatLabel}>Avg Score</Text>
+  </View>
+
+  <View style={styles.childStatDivider} />
+
+  <View style={styles.childStat}>
+    <Award size={14} color={colors.textSecondary} />
+    <Text style={styles.childStatValue}>{achievementsCount}</Text>
+    <Text style={styles.childStatLabel}>Achievements</Text>
+  </View>
+</View>
+```
+
+<Info>
+If a child hasn't completed any lessons yet, their average score will show "--" instead of 0%, making it clear they're just getting started.
+</Info>
+
+## Quick Actions
+
+### Start Learning Button
+
+From `dashboard-page.tsx:126-131`:
+
+```typescript
+<TouchableOpacity style={styles.childViewButton} onPress={onView}>
+  <User size={14} color={colors.onPrimary} />
+  <Text style={styles.childViewButtonText}>Start Learning as {learner.name}</Text>
+  <ArrowRight size={14} color={colors.onPrimary} />
+</TouchableOpacity>
+```
+
+This button:
+- Switches context to the selected child
+- Navigates to the learner dashboard
+- Allows you to experience learning as that child
+- Useful for testing and understanding their experience
+
+### Add Another Child
+
+After you have at least one child, you can add more:
+
+```typescript
+// From dashboard-page.tsx:273-279
+<TouchableOpacity
+  style={styles.addAnotherButton}
+  onPress={() => setLocation('/add-learner')}
+>
+  <Plus size={16} color={colors.primary} />
+  <Text style={styles.addAnotherButtonText}>Add Another Child</Text>
+</TouchableOpacity>
+```
+
+### Tools Row
+
+From `dashboard-page.tsx:282-298`, quick links to key features:
+
+```typescript
+<View style={styles.toolsRow}>
+  <Link href="/reports">
+    <Text style={styles.toolLink}>Reports</Text>
+  </Link>
+  <Text style={styles.toolDivider}>·</Text>
+  <Link href="/rewards">
+    <Text style={styles.toolLink}>Rewards</Text>
+  </Link>
+  {user?.role === 'ADMIN' && (
+    <>
+      <Text style={styles.toolDivider}>·</Text>
+      <Link href="/admin">
+        <Text style={styles.toolLink}>Admin Panel</Text>
+      </Link>
+    </>
+  )}
+</View>
+```
+
+## First-Time Parent Experience
+
+When you have no children yet, you'll see:
+
+### Inline Add Child Form
+
+From `dashboard-page.tsx:136-228`:
+
+```typescript
+const InlineAddChildForm: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
+  const [name, setName] = useState('');
+  const [gradeLevel, setGradeLevel] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      setError('Please enter a name');
+      return;
+    }
+    const numericGrade = gradeToNumber(gradeLevel);
+    if (numericGrade === null) {
+      setError('Please select a grade level');
+      return;
+    }
+
+    await apiRequest('POST', '/api/learners', {
+      name: name.trim(),
+      gradeLevel: numericGrade,
+      role: 'LEARNER',
+      parentId: user?.id,
+    });
+  };
+};
+```
+
+<Steps>
+  <Step title="Enter Child's Name">
+    Provide your child's first name or nickname
+  </Step>
+  
+  <Step title="Select Grade Level">
+    Choose from Kindergarten (K) through Grade 12
+    
+    The system converts "K" to grade level 0 internally
+  </Step>
+  
+  <Step title="Click Add Child">
+    Creates the learner account and refreshes the dashboard
+  </Step>
+</Steps>
+
+## Managing Multiple Children
+
+The dashboard automatically adapts based on the number of children:
+
+<Tabs>
+  <Tab title="No Children">
+    Shows inline form to add first child with helpful onboarding text
+  </Tab>
+  
+  <Tab title="One or More Children">
+    Displays child cards in a scrollable list with "Add Another Child" button
+  </Tab>
+</Tabs>
+
+From `dashboard-page.tsx:250`:
+
+```typescript
+const hasChildren = learners && learners.length > 0;
+```
+
+## Loading States
+
+While fetching learner data:
+
+```typescript
+// From dashboard-page.tsx:259-261
+{learnersLoading ? (
+  <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: 24 }} />
+) : hasChildren ? (
+  // Show child cards
+) : (
+  // Show add child form
+)}
+```
+
+<Warning>
+The dashboard may take a few seconds to load if you have many children or extensive learning history. This is normal and ensures all data is accurate.
+</Warning>
+
+## Data Refresh
+
+The dashboard uses React Query for automatic data management:
+
+```typescript
+// From dashboard-page.tsx:28-35
+const { data: report, isLoading: reportLoading } = useQuery<ChildReport>({
+  queryKey: [`/api/reports`, learner.id, 'progress'],
+  queryFn: () =>
+    apiRequest('GET', `/api/reports?learnerId=${learner.id}&type=progress`).then(
+      (res: any) => res.data ?? res,
+    ),
+  enabled: !!learner.id,
+});
+```
+
+<Info>
+Data refreshes automatically when you return to the dashboard, ensuring you always see the latest progress.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add Your First Child" icon="user-plus" href="/parents/adding-children">
+    Learn how to create learner accounts
+  </Card>
+  
+  <Card title="View Progress Reports" icon="chart-line" href="/parents/progress-tracking">
+    Dive into detailed analytics
+  </Card>
+  
+  <Card title="Set Up Rewards" icon="gift" href="/parents/rewards-system">
+    Create motivational incentives
+  </Card>
+  
+  <Card title="Export Data" icon="download" href="/parents/data-export">
+    Download learner information
+  </Card>
+</CardGroup>

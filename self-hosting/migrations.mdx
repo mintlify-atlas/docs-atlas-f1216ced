@@ -1,0 +1,568 @@
+---
+title: Database Migrations
+description: Managing schema changes and database migrations
+icon: code-branch
+---
+
+## Migration System
+
+Sunschool uses **Drizzle ORM** for database migrations with automatic application on server startup.
+
+From `ENGINEERING.md`:
+
+> Migrations run automatically on startup. Manual commands available for debugging.
+> Migration folder: `drizzle/migrations/` (0000-0008)
+
+### How Migrations Work
+
+```typescript
+// server/index.ts (conceptual)
+import { migrate } from 'drizzle-orm/neon-http/migrator';
+
+try {
+  await migrate(db, { migrationsFolder: './drizzle/migrations' });
+  console.log('✅ Migrations applied successfully');
+} catch (error) {
+  console.error('⚠️ Migration failed:', error);
+  // Server continues despite migration failures
+}
+```
+
+<Info>
+  Migration failures **do not block server startup**. This prevents downtime from schema issues.
+</Info>
+
+## Migration Files
+
+From the repository:
+
+```
+drizzle/migrations/
+├── 0000_initial_migration.sql
+├── 0001_db_sync_configs.sql
+├── 0002_gamification.sql
+├── 0003_question_history.sql
+├── 0003_token_gamification.sql
+├── 0004_quiz_answers.sql
+├── 0005_concept_mastery.sql
+├── 0006_schema_alignment.sql
+├── 0007_rewards_system.sql
+└── 0008_unify_spec.sql
+```
+
+### Migration Numbering
+
+Migrations are **numbered sequentially** starting from 0000. Each file contains:
+
+- **SQL statements** to apply schema changes
+- **Rollback instructions** (if reversible)
+- **Comments** explaining the purpose
+
+Example migration structure:
+
+```sql
+-- Migration: 0004_quiz_answers
+-- Purpose: Add individual quiz answer tracking for analytics
+-- Date: 2025-01-15
+
+CREATE TABLE quiz_answers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  learner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lesson_id TEXT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+  question_index INTEGER NOT NULL,
+  question_text TEXT NOT NULL,
+  question_hash VARCHAR(64) NOT NULL,
+  user_answer INTEGER NOT NULL,
+  correct_answer INTEGER NOT NULL,
+  is_correct BOOLEAN NOT NULL,
+  concept_tags TEXT[],
+  answered_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_learner_answers ON quiz_answers(learner_id, answered_at);
+CREATE INDEX idx_question_hash ON quiz_answers(question_hash);
+```
+
+## Manual Migration Commands
+
+From `package.json`:
+
+```json
+{
+  "scripts": {
+    "migrate": "ts-node --transpile-only scripts/migrate.ts",
+    "db:push": "drizzle-kit push:pg",
+    "db:seed": "ts-node scripts/seed.ts"
+  }
+}
+```
+
+### Run Migrations
+
+```bash
+# Apply all pending migrations
+npm run migrate
+
+# Output:
+# ✅ Running migrations...
+# ✅ Applied 0004_quiz_answers.sql
+# ✅ Applied 0005_concept_mastery.sql
+# ✅ All migrations completed
+```
+
+### Push Schema Changes
+
+<Warning>
+  `db:push` applies schema changes **without generating migration files**. Use for rapid prototyping only.
+</Warning>
+
+```bash
+npm run db:push
+
+# Pushes current schema from shared/schema.ts to database
+# Does NOT create migration files
+# Use in development, not production
+```
+
+### Seed Database
+
+```bash
+# Populate database with test data (development only)
+npm run db:seed
+
+# Creates:
+# - Sample users (admin, parent, learners)
+# - Test lessons
+# - Mock achievements
+```
+
+## Creating New Migrations
+
+### Step 1: Update Schema
+
+Edit `shared/schema.ts`:
+
+```typescript
+// Add new table
+export const learningGoals = pgTable("learning_goals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  learnerId: integer("learner_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  targetType: text("target_type").notNull(),
+  targetValue: integer("target_value").notNull(),
+  currentValue: integer("current_value").default(0),
+  isCompleted: boolean("is_completed").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+```
+
+### Step 2: Generate Migration
+
+```bash
+# Generate SQL migration from schema changes
+npx drizzle-kit generate:pg
+
+# Output:
+# ✅ Analyzing schema changes...
+# ✅ Generated migration: drizzle/migrations/0009_learning_goals.sql
+```
+
+### Step 3: Review Generated SQL
+
+```bash
+cat drizzle/migrations/0009_learning_goals.sql
+```
+
+```sql
+CREATE TABLE learning_goals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  learner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_value INTEGER NOT NULL,
+  current_value INTEGER DEFAULT 0,
+  is_completed BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Step 4: Apply Migration
+
+<Tabs>
+  <Tab title="Auto (Server Restart)">
+    ```bash
+    # Restart server to auto-apply migrations
+    npm start
+    
+    # Server logs:
+    # ✅ Migrations applied successfully
+    # ✅ Applied 0009_learning_goals.sql
+    ```
+  </Tab>
+  <Tab title="Manual">
+    ```bash
+    # Apply immediately without restart
+    npm run migrate
+    
+    # ✅ Running migrations...
+    # ✅ Applied 0009_learning_goals.sql
+    ```
+  </Tab>
+  <Tab title="Production">
+    ```bash
+    # Apply with Railway CLI
+    railway run npm run migrate
+    
+    # Or let auto-deploy handle it
+    git push origin main
+    # Railway auto-applies migrations on deploy
+    ```
+  </Tab>
+</Tabs>
+
+## Migration Best Practices
+
+### Idempotent Migrations
+
+<Info>
+  Migrations should be **idempotent** - safe to run multiple times.
+</Info>
+
+**Good: Check before creating**
+
+```sql
+CREATE TABLE IF NOT EXISTS learning_goals (...);
+
+CREATE INDEX IF NOT EXISTS idx_learner_goals 
+ON learning_goals(learner_id);
+```
+
+**Bad: Always creates**
+
+```sql
+CREATE TABLE learning_goals (...);
+-- Fails if table exists
+```
+
+### Additive Changes
+
+<Check>
+  Prefer **additive changes** over destructive ones.
+</Check>
+
+**Good: Add column with default**
+
+```sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'UTC';
+```
+
+**Risky: Drop column**
+
+```sql
+ALTER TABLE users DROP COLUMN old_field;
+-- Data loss - requires careful planning
+```
+
+### Backward Compatibility
+
+<Info>
+  Maintain **backward compatibility** during rolling deployments.
+</Info>
+
+**Strategy: Two-phase migrations**
+
+Phase 1 (Migration 0010):
+```sql
+-- Add new column, keep old one
+ALTER TABLE lessons ADD COLUMN enhanced_spec JSONB;
+```
+
+Phase 2 (Migration 0011, after code update):
+```sql
+-- Migrate data
+UPDATE lessons SET enhanced_spec = spec WHERE enhanced_spec IS NULL;
+
+-- Drop old column
+ALTER TABLE lessons DROP COLUMN spec;
+```
+
+### Data Migrations
+
+**Separate data changes from schema changes:**
+
+```sql
+-- 0012_add_grade_level_column.sql
+ALTER TABLE learner_profiles ADD COLUMN grade_level INTEGER;
+
+-- 0013_populate_grade_levels.sql
+UPDATE learner_profiles 
+SET grade_level = 5 
+WHERE grade_level IS NULL;
+
+ALTER TABLE learner_profiles ALTER COLUMN grade_level SET NOT NULL;
+```
+
+## Rollback Strategy
+
+### Manual Rollback
+
+<Warning>
+  Drizzle does not support automatic rollbacks. Create manual rollback scripts.
+</Warning>
+
+**Forward migration (0014_add_achievements.sql):**
+
+```sql
+CREATE TABLE achievements (
+  id UUID PRIMARY KEY,
+  learner_id INTEGER REFERENCES users(id),
+  type TEXT NOT NULL,
+  awarded_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**Rollback script (0014_rollback.sql):**
+
+```sql
+DROP TABLE IF EXISTS achievements;
+```
+
+**Apply rollback:**
+
+```bash
+psql $DATABASE_URL < drizzle/migrations/0014_rollback.sql
+```
+
+### Database Backups
+
+<Warning>
+  **Always backup before migrations in production.**
+</Warning>
+
+<Tabs>
+  <Tab title="Neon">
+    Neon provides automatic backups:
+    
+    - Point-in-time recovery (7 days on Free, 30+ on Pro)
+    - Access via [Neon Console](https://neon.tech)
+    - Branch from backup for testing
+  </Tab>
+  <Tab title="Local PostgreSQL">
+    ```bash
+    # Full backup
+    pg_dump $DATABASE_URL > backup_$(date +%Y%m%d_%H%M%S).sql
+    
+    # Compressed backup
+    pg_dump $DATABASE_URL | gzip > backup_$(date +%Y%m%d_%H%M%S).sql.gz
+    
+    # Restore
+    psql $DATABASE_URL < backup_20260312_083000.sql
+    ```
+  </Tab>
+  <Tab title="Railway">
+    Railway PostgreSQL has automated backups:
+    
+    - Daily snapshots (retained 7 days)
+    - Access via Railway dashboard
+    - One-click restore
+  </Tab>
+</Tabs>
+
+## Migration Tracking
+
+Drizzle stores applied migrations in a `drizzle_migrations` table:
+
+```sql
+CREATE TABLE drizzle_migrations (
+  hash TEXT PRIMARY KEY,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**Check migration status:**
+
+```bash
+psql $DATABASE_URL -c "SELECT * FROM drizzle_migrations ORDER BY created_at DESC;"
+
+#        hash         |        created_at
+# --------------------+---------------------------
+#  0008_unify_spec    | 2026-03-10 14:32:10.123
+#  0007_rewards       | 2026-03-08 09:15:42.456
+#  0006_alignment     | 2026-03-05 11:20:33.789
+```
+
+## Common Migration Scenarios
+
+### Adding a Column
+
+```sql
+-- Add optional column
+ALTER TABLE users ADD COLUMN timezone TEXT;
+
+-- Add required column with default
+ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT false;
+
+-- Add column, populate, make required
+ALTER TABLE users ADD COLUMN full_name TEXT;
+UPDATE users SET full_name = name WHERE full_name IS NULL;
+ALTER TABLE users ALTER COLUMN full_name SET NOT NULL;
+```
+
+### Adding an Index
+
+```sql
+-- Simple index
+CREATE INDEX idx_lessons_learner ON lessons(learner_id);
+
+-- Composite index
+CREATE INDEX idx_quiz_answers_learner_date 
+ON quiz_answers(learner_id, answered_at DESC);
+
+-- Partial index
+CREATE UNIQUE INDEX idx_one_active_per_learner 
+ON lessons(learner_id) 
+WHERE status = 'ACTIVE';
+
+-- Concurrent index (non-blocking)
+CREATE INDEX CONCURRENTLY idx_lessons_subject ON lessons(subject);
+```
+
+### Modifying a Column
+
+```sql
+-- Change type (safe if compatible)
+ALTER TABLE lessons ALTER COLUMN score TYPE BIGINT;
+
+-- Add constraint
+ALTER TABLE lessons ADD CONSTRAINT score_range 
+CHECK (score >= 0 AND score <= 100);
+
+-- Make nullable
+ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+
+-- Change default
+ALTER TABLE users ALTER COLUMN role SET DEFAULT 'LEARNER';
+```
+
+### Renaming
+
+```sql
+-- Rename column
+ALTER TABLE users RENAME COLUMN name TO display_name;
+
+-- Rename table
+ALTER TABLE old_table RENAME TO new_table;
+
+-- Rename index
+ALTER INDEX old_idx RENAME TO new_idx;
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Migration timeout">
+    **Cause:** Large table, slow operation (e.g., adding index).
+    
+    **Fix:**
+    ```sql
+    -- Use CONCURRENTLY for indexes
+    CREATE INDEX CONCURRENTLY idx_name ON table(column);
+    
+    -- Break into smaller batches for data migrations
+    UPDATE table SET new_col = old_col WHERE id < 1000;
+    UPDATE table SET new_col = old_col WHERE id >= 1000 AND id < 2000;
+    ```
+  </Accordion>
+  
+  <Accordion title="Constraint violation">
+    **Cause:** Existing data doesn't meet new constraint.
+    
+    **Fix:**
+    ```sql
+    -- Check violating rows
+    SELECT * FROM lessons WHERE score < 0 OR score > 100;
+    
+    -- Fix data
+    UPDATE lessons SET score = 0 WHERE score < 0;
+    UPDATE lessons SET score = 100 WHERE score > 100;
+    
+    -- Re-run migration
+    npm run migrate
+    ```
+  </Accordion>
+  
+  <Accordion title="Migration already applied">
+    **Cause:** Migration ran but wasn't recorded in tracking table.
+    
+    **Fix:**
+    ```sql
+    -- Check table exists
+    \dt+ achievements
+    
+    -- Manually mark as applied
+    INSERT INTO drizzle_migrations (hash, created_at) 
+    VALUES ('0014_achievements', NOW());
+    ```
+  </Accordion>
+  
+  <Accordion title="Schema mismatch">
+    **Cause:** Database schema doesn't match `shared/schema.ts`.
+    
+    **Fix:**
+    ```bash
+    # Option 1: Push current schema (development only)
+    npm run db:push
+    
+    # Option 2: Generate and apply migration
+    npx drizzle-kit generate:pg
+    npm run migrate
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Testing Migrations
+
+### Local Testing
+
+```bash
+# Create test database
+creatdb sunschool_test
+
+# Run migrations against test DB
+DATABASE_URL="postgresql://localhost/sunschool_test" npm run migrate
+
+# Verify schema
+psql sunschool_test -c "\dt+"
+
+# Test rollback
+psql sunschool_test < drizzle/migrations/0014_rollback.sql
+```
+
+### Staging Environment
+
+<Info>
+  Always test migrations in staging before production.
+</Info>
+
+```bash
+# Railway staging environment
+railway environment staging
+railway run npm run migrate
+
+# Verify
+railway run psql $DATABASE_URL -c "SELECT * FROM drizzle_migrations;"
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Setup" icon="database" href="/self-hosting/database">
+    Learn about database configuration
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/self-hosting/monitoring">
+    Monitor migration success and failures
+  </Card>
+  <Card title="Troubleshooting" icon="bug" href="/self-hosting/troubleshooting">
+    Debug migration issues
+  </Card>
+</CardGroup>

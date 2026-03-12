@@ -1,0 +1,373 @@
+---
+title: System Requirements
+description: Prerequisites for self-hosting Sunschool
+icon: check-circle
+---
+
+## Node.js Environment
+
+### Required Version
+
+<Info>
+  **Node.js v20+** is required, with **v22 recommended** for production deployments.
+</Info>
+
+Sunschool uses modern JavaScript features and is tested against Node 22. The production deployment on Railway uses Node 22 via NIXPACKS.
+
+From `package.json`:
+
+```json
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
+```
+
+### Verify Your Installation
+
+```bash
+node --version
+# Should output v20.x.x or higher (v22.x.x recommended)
+
+npm --version
+# Should output 8.x.x or higher
+```
+
+### Installing Node.js
+
+<Tabs>
+  <Tab title="Ubuntu/Debian">
+    ```bash
+    # Using NodeSource repository
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    ```
+  </Tab>
+  <Tab title="macOS">
+    ```bash
+    # Using Homebrew
+    brew install node@22
+    
+    # Or using nvm
+    nvm install 22
+    nvm use 22
+    ```
+  </Tab>
+  <Tab title="Windows">
+    Download the installer from [nodejs.org](https://nodejs.org/) or use:
+    
+    ```powershell
+    # Using Chocolatey
+    choco install nodejs-lts
+    ```
+  </Tab>
+</Tabs>
+
+## PostgreSQL Database
+
+### Required Version
+
+<Info>
+  **PostgreSQL 12+** is required. Sunschool is tested with PostgreSQL 14 and 15.
+</Info>
+
+The application uses:
+- **JSONB columns** for complex data (lesson specs, learner profiles)
+- **Array types** for concept tags
+- **Drizzle ORM** for migrations and queries
+- **WebSocket connections** (Neon serverless compatible)
+
+### Database Features Used
+
+From the schema (`shared/schema.ts`):
+
+```typescript
+// Enums
+export const userRoleEnum = pgEnum("user_role", ["ADMIN", "PARENT", "LEARNER"]);
+export const lessonStatusEnum = pgEnum("lesson_status", ["QUEUED", "ACTIVE", "DONE"]);
+
+// JSONB columns for complex data
+spec: json("spec").$type<EnhancedLessonSpec>(),
+graph: json("graph").$type<{ nodes: any[], edges: any[] }>(),
+
+// Array types for tagging
+conceptTags: text("concept_tags").array(),
+```
+
+### Installation Options
+
+<Tabs>
+  <Tab title="Neon Serverless (Recommended)">
+    [Neon](https://neon.tech) provides serverless PostgreSQL with:
+    
+    - Automatic scaling and connection pooling
+    - WebSocket connections (used by Sunschool)
+    - Free tier available
+    - No server management required
+    
+    **Setup:**
+    1. Create account at [neon.tech](https://neon.tech)
+    2. Create new project
+    3. Copy connection string to `DATABASE_URL`
+    
+    ```env
+    DATABASE_URL="postgresql://user:pass@ep-cool-name-123456.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    ```
+  </Tab>
+  <Tab title="Local PostgreSQL">
+    Install PostgreSQL locally:
+    
+    **Ubuntu/Debian:**
+    ```bash
+    sudo apt update
+    sudo apt install postgresql postgresql-contrib
+    sudo systemctl start postgresql
+    ```
+    
+    **macOS:**
+    ```bash
+    brew install postgresql@15
+    brew services start postgresql@15
+    ```
+    
+    **Create database:**
+    ```bash
+    sudo -u postgres createdb sunschool
+    sudo -u postgres psql
+    postgres=# CREATE USER sunschool_user WITH PASSWORD 'secure_password';
+    postgres=# GRANT ALL PRIVILEGES ON DATABASE sunschool TO sunschool_user;
+    ```
+    
+    **Connection string:**
+    ```env
+    DATABASE_URL="postgresql://sunschool_user:secure_password@localhost:5432/sunschool"
+    ```
+  </Tab>
+  <Tab title="Docker PostgreSQL">
+    Run PostgreSQL in Docker:
+    
+    ```bash
+    docker run -d \
+      --name sunschool-db \
+      -e POSTGRES_PASSWORD=secure_password \
+      -e POSTGRES_DB=sunschool \
+      -p 5432:5432 \
+      postgres:15-alpine
+    ```
+    
+    **Connection string:**
+    ```env
+    DATABASE_URL="postgresql://postgres:secure_password@localhost:5432/sunschool"
+    ```
+  </Tab>
+</Tabs>
+
+## Package Manager
+
+### npm
+
+<Info>
+  Sunschool uses **npm** as the package manager. Minimum version 8.x required.
+</Info>
+
+The project includes `package.json` with all dependencies. Key packages:
+
+```json
+{
+  "dependencies": {
+    "express": "^5.1.0",
+    "drizzle-orm": "^0.43.1",
+    "react": "^19.1.0",
+    "@tanstack/react-query": "^5.74.11",
+    "jsonwebtoken": "^9.0.2",
+    "axios": "^1.9.0"
+  }
+}
+```
+
+**Installation:**
+
+```bash
+npm install
+# Installs ~70 packages
+```
+
+## System Resources
+
+### Minimum Specifications
+
+<Warning>
+  These are **absolute minimums**. Production deployments should exceed these.
+</Warning>
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| **CPU** | 1 vCPU | 2+ vCPUs |
+| **RAM** | 512 MB | 2 GB |
+| **Storage** | 1 GB | 10 GB+ |
+| **Network** | 10 Mbps | 100+ Mbps |
+
+### Memory Considerations
+
+- **Node.js process**: 200-400 MB baseline
+- **PostgreSQL**: 128-256 MB minimum
+- **AI processing**: Temporary spikes during lesson generation
+- **Concurrent users**: +50MB per active session
+
+### Storage Breakdown
+
+```
+/sunschool/
+├── node_modules/     ~300 MB  (dependencies)
+├── client/dist/      ~15 MB   (built frontend)
+├── server/dist/      ~5 MB    (compiled backend)
+└── database/         variable (lesson data, images)
+```
+
+Lesson images (SVG) average 10-50 KB each. A typical database with 1000 lessons uses ~500 MB.
+
+## Network Requirements
+
+### Ports
+
+<Info>
+  Default port is **5000** (configurable via `PORT` environment variable).
+</Info>
+
+```bash
+# Development
+http://localhost:5000
+
+# Production (behind reverse proxy)
+https://yourdomain.com → proxy → localhost:5000
+```
+
+### Firewall Rules
+
+**Incoming:**
+- Port 5000 (HTTP) - from reverse proxy or public
+- Port 5432 (PostgreSQL) - only if database is remote
+
+**Outgoing:**
+- Port 443 (HTTPS) - for AI provider APIs:
+  - `api.openrouter.ai`
+  - `api.perplexity.ai`
+  - `archive.opentensor.ai` (Bittensor, optional)
+
+## Operating System
+
+### Supported Platforms
+
+<Tabs>
+  <Tab title="Linux (Recommended)">
+    - Ubuntu 20.04+ LTS
+    - Debian 11+
+    - CentOS 8+
+    - Amazon Linux 2
+    
+    **Tested on:** Ubuntu 22.04 LTS
+  </Tab>
+  <Tab title="macOS">
+    - macOS 11 (Big Sur)+
+    - Apple Silicon (M1/M2) supported
+    
+    **Note:** For development only, not recommended for production.
+  </Tab>
+  <Tab title="Windows">
+    - Windows 10+
+    - Windows Server 2019+
+    
+    **Note:** Use WSL2 for best compatibility:
+    ```powershell
+    wsl --install
+    wsl --set-default-version 2
+    ```
+  </Tab>
+</Tabs>
+
+## Additional Tools (Optional)
+
+### Development Tools
+
+```bash
+# TypeScript (included in devDependencies)
+npx tsc --version
+
+# Build tools
+npm run build      # Vite + TypeScript compilation
+npm run migrate    # Database migrations
+npm test           # Jest unit tests
+```
+
+### Production Tools
+
+<AccordionGroup>
+  <Accordion title="PM2 Process Manager">
+    For process management and auto-restart:
+    
+    ```bash
+    npm install -g pm2
+    pm2 start npm --name "sunschool" -- start
+    pm2 startup
+    pm2 save
+    ```
+  </Accordion>
+  
+  <Accordion title="Nginx Reverse Proxy">
+    For SSL termination and load balancing:
+    
+    ```nginx
+    server {
+      listen 443 ssl http2;
+      server_name sunschool.example.com;
+      
+      location / {
+        proxy_pass http://localhost:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Verification Checklist
+
+Before proceeding to installation:
+
+<Steps>
+  <Step title="Node.js v20+">
+    ```bash
+    node --version
+    # ✅ v22.15.3 (or v20.x.x+)
+    ```
+  </Step>
+  <Step title="npm v8+">
+    ```bash
+    npm --version
+    # ✅ 9.5.0 (or higher)
+    ```
+  </Step>
+  <Step title="PostgreSQL accessible">
+    ```bash
+    psql -h localhost -U postgres -c "SELECT version();"
+    # ✅ PostgreSQL 15.x
+    ```
+  </Step>
+  <Step title="Sufficient resources">
+    ```bash
+    free -h  # RAM
+    df -h    # Disk space
+    # ✅ 2GB RAM, 10GB disk available
+    ```
+  </Step>
+</Steps>
+
+<Check>
+  **Ready to proceed?** Continue to [Environment Configuration](/self-hosting/environment)
+</Check>

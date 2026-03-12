@@ -1,0 +1,198 @@
+---
+title: Learner Experience Overview
+description: What learners see and do in Sunschool - a kid-friendly learning journey
+icon: user-circle
+---
+
+## Welcome to Your Learning Journey
+
+Sunschool provides a personalized, engaging learning experience designed specifically for young learners. Every learner gets their own dashboard with adaptive lessons, fun quizzes, and a visual map of everything they've learned.
+
+## Daily Learning Flow
+
+When learners log in, they see their **Learner Home** with:
+
+### 1. Personal Greeting
+
+```typescript
+// From learner-home.tsx:228-241
+<View style={styles.header}>
+  <View style={styles.userInfo}>
+    <View style={styles.avatarContainer}>
+      <User size={24} color={colors.primary} />
+    </View>
+    <View>
+      <Text style={styles.greeting}>Hello, {selectedLearner?.name}!</Text>
+      <Text style={styles.gradeText}>
+        Grade {profile?.gradeLevel || '—'}
+      </Text>
+    </View>
+  </View>
+</View>
+```
+
+Each learner sees their name and current grade level at the top of the screen.
+
+### 2. Current Lesson Card
+
+The active lesson is prominently displayed with:
+- **Lesson title** and subject
+- **Continue Learning** button to resume
+- **Change Subject** option to switch topics
+- **New Lesson** button to generate a fresh lesson
+
+```typescript
+// From learner-home.tsx:279-285
+{activeLesson ? (
+  <>
+    <LessonCard
+      lesson={activeLesson}
+      onPress={handleViewLesson}
+    />
+    // ... action buttons
+  </>
+```
+
+<Info>
+If no lesson is active, learners see a friendly empty state with options to select a subject or get a random lesson.
+</Info>
+
+### 3. Brain Map (Knowledge Graph)
+
+Visual representation of connected concepts learners have mastered:
+
+```typescript
+// From learner-home.tsx:338-348
+{profile?.graph && profile.graph.nodes.length > 0 && (
+  <View style={styles.sectionContainer}>
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>My Brain Map</Text>
+    </View>
+    <View style={styles.graphContainer}>
+      <KnowledgeGraph graph={profile.graph} />
+    </View>
+  </View>
+)}
+```
+
+The knowledge graph shows:
+- **Nodes**: Individual concepts learned
+- **Edges**: Connections between related ideas
+- **Interactive**: Learners can tap nodes to see details
+
+### 4. Goals Progress Strip
+
+A quick view of their top reward goal:
+
+```typescript
+// From learner-home.tsx:43-77
+<GoalsStrip learnerId={selectedLearner?.id} onPress={() => setLocation('/goals')} theme={theme} />
+```
+
+Shows:
+- Goal emoji and title
+- Progress bar (saved points / total needed)
+- Percentage complete
+
+### 5. Learning Journey Card
+
+Tappable card leading to detailed progress tracking:
+
+```typescript
+// From learner-home.tsx:353-367
+<TouchableOpacity 
+  style={styles.journeyCard}
+  onPress={() => setLocation('/progress')}
+>
+  <View style={styles.journeyIcon}>
+    <Compass size={24} color={colors.onPrimary} />
+  </View>
+  <View style={styles.journeyContent}>
+    <Text style={styles.journeyTitle}>My Progress</Text>
+    <Text style={styles.journeyText}>
+      Track your progress and see how far you've come
+    </Text>
+  </View>
+</TouchableOpacity>
+```
+
+## Kid-Friendly Interface
+
+### Design Principles
+
+1. **Simple Navigation**: Pull-to-refresh, clear buttons, no complex menus
+2. **Visual Feedback**: Loading animations use `FunLoader` with encouraging messages
+3. **Instant Gratification**: Immediate feedback on quiz answers
+4. **Gamification**: Points, badges, and visual progress tracking
+
+### Loading Experience
+
+```typescript
+// From learner-home.tsx:243-251
+{isLoading ? (
+  <FunLoader
+    progressMessages={
+      generateLessonMutation.isPending
+        ? ['Finding the best lesson for you...', 'Almost ready...', 'Here it comes!']
+        : undefined
+    }
+    message={generateLessonMutation.isPending ? undefined : 'Getting your stuff ready...'}
+  />
+```
+
+<Note>
+The FunLoader component shows animated progress with kid-friendly messages to keep learners engaged during loading.
+</Note>
+
+## Parent-as-Learner Mode Preview
+
+Parents can experience the learner interface by:
+1. Switching to their child's view using the learner selector
+2. Seeing exactly what their child sees
+3. Testing lessons and quizzes
+4. Understanding the learning flow
+
+This helps parents:
+- Monitor difficulty levels
+- Preview content before children see it
+- Understand the reward and achievement system
+- Provide better support
+
+## Key Features Accessible to Learners
+
+<CardGroup cols={2}>
+  <Card title="Personalized Lessons" icon="book" href="/learners/lessons">
+    Grade-specific content with adaptive difficulty
+  </Card>
+  
+  <Card title="Interactive Quizzes" icon="graduation-cap" href="/learners/quizzes">
+    Immediate feedback and points for correct answers
+  </Card>
+  
+  <Card title="Achievements" icon="trophy" href="/learners/achievements">
+    Unlock badges for milestones and perfect scores
+  </Card>
+  
+  <Card title="Reward Goals" icon="gift" href="/learners/points-rewards">
+    Save points toward parent-created rewards
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Steps>
+  <Step title="Learn About Lessons">
+    Explore how lessons are generated and adapted to grade level
+    [Read about lessons →](/learners/lessons)
+  </Step>
+  
+  <Step title="Understand Quizzes">
+    See how quizzes work and how learners earn points
+    [Quiz mechanics →](/learners/quizzes)
+  </Step>
+  
+  <Step title="Track Progress">
+    Review the knowledge graph and mastery tracking system
+    [Knowledge tracking →](/learners/knowledge-graph)
+  </Step>
+</Steps>

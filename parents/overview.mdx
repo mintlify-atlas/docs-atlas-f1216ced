@@ -1,0 +1,195 @@
+---
+title: Parent Experience Overview
+description: Everything parents can do in Sunschool to support their children's learning journey
+---
+
+# Parent Experience Overview
+
+Sunschool provides parents with powerful tools to monitor, guide, and support their children's personalized learning experience. As a parent, you have access to comprehensive dashboards, progress tracking, and motivational systems.
+
+## What Parents Can Do
+
+### Multi-Child Management
+
+Parents can manage multiple children from a single account:
+
+- **Add unlimited learner accounts** for all your children
+- **View all children at once** from the parent dashboard
+- **Switch between learner views** to see individual progress
+- **Configure unique settings** for each child
+
+From `dashboard-page.tsx:236-243`:
+
+```typescript
+const { data: learners } = useQuery<any[]>({
+  queryKey: ['/api/learners'],
+  queryFn: () => apiRequest('GET', '/api/learners').then((res: any) => res.data ?? res),
+  enabled: user?.role === 'PARENT' || user?.role === 'ADMIN',
+});
+```
+
+### Dashboard Features
+
+The parent dashboard provides at-a-glance insights:
+
+<CardGroup cols={3}>
+  <Card title="Child Cards" icon="user">
+    Each child has a dedicated card showing:
+    - Lessons completed
+    - Average score
+    - Achievement count
+    - Current grade level
+  </Card>
+  
+  <Card title="Quick Actions" icon="bolt">
+    Direct access to:
+    - Start learning as any child
+    - Add new children
+    - View detailed reports
+    - Manage rewards
+  </Card>
+  
+  <Card title="Real-time Stats" icon="chart-line">
+    Live updates on:
+    - Learning activity
+    - Recent lessons
+    - New achievements
+    - Points earned
+  </Card>
+</CardGroup>
+
+### Child Status Cards
+
+Each child card displays comprehensive learning metrics:
+
+```typescript
+// From dashboard-page.tsx:57-70
+const lessonsCompleted = report?.analytics?.lessonsCompleted ?? 0;
+const achievementsCount = report?.analytics?.achievementsCount ?? 0;
+
+let avgScore: number | null = null;
+if (report?.analytics?.averageScore != null) {
+  avgScore = Math.round(report.analytics.averageScore);
+} else if (lessons && lessons.length > 0) {
+  const scored = lessons.filter((l: any) => typeof l.score === 'number');
+  if (scored.length > 0) {
+    const total = scored.reduce((sum: number, l: any) => sum + l.score, 0);
+    avgScore = Math.round(total / scored.length);
+  }
+}
+```
+
+<Info>
+The dashboard automatically calculates average scores from completed lessons when analytics data isn't available, ensuring parents always have accurate information.
+</Info>
+
+## Parent-as-Learner Mode
+
+Parents can switch into "learner mode" to:
+
+- **Experience the learning interface** from a child's perspective
+- **Test lessons** before children attempt them
+- **Understand the curriculum** and difficulty levels
+- **Participate in learning** alongside their children
+
+From `dashboard-page.tsx:245-248`:
+
+```typescript
+const handleViewChild = (learner: any) => {
+  selectLearner(learner); // Switches context to the selected child
+};
+```
+
+## Getting Started
+
+When you first log in as a parent:
+
+1. **First-time parents** see an inline form to add their first child
+2. **The form requires** only a name and grade level (K-12)
+3. **After adding a child**, you can immediately start learning
+4. **Quick access** to reports, rewards, and admin tools (if applicable)
+
+From `dashboard-page.tsx:300-306`:
+
+```typescript
+{!hasChildren ? (
+  <>
+    <Text style={styles.subtitle}>Add your child to get started</Text>
+    <InlineAddChildForm onSuccess={() => {}} />
+  </>
+) : (
+  // Show child cards and management tools
+)}
+```
+
+## Key Features
+
+<AccordionGroup>
+  <Accordion title="Progress Tracking">
+    View detailed analytics for each child including:
+    - Lesson completion rates
+    - Subject mastery levels
+    - Knowledge graph visualization
+    - Time spent learning
+    - Recent activity feed
+  </Accordion>
+
+  <Accordion title="Rewards System">
+    Create and manage motivational rewards:
+    - Set point costs for rewards
+    - Approve or reject redemption requests
+    - Track learner progress toward goals
+    - Enable special scoring modes
+  </Accordion>
+
+  <Accordion title="Learning Goals">
+    Help children work toward objectives:
+    - Create custom learning goals
+    - Set completion targets
+    - Track progress over time
+    - Celebrate achievements
+  </Accordion>
+
+  <Accordion title="Data Management">
+    Maintain ownership of your data:
+    - Export learner data in JSON format
+    - Sync to external PostgreSQL databases
+    - Configure continuous backup
+    - Access complete learning history
+  </Accordion>
+</AccordionGroup>
+
+## Navigation Quick Reference
+
+| Feature | Location | Description |
+|---------|----------|-------------|
+| **Dashboard** | `/` | Main parent view with all children |
+| **Add Child** | `/add-learner` | Create new learner account |
+| **Reports** | `/reports` | Detailed analytics and progress |
+| **Rewards** | `/rewards` | Manage reward catalog and redemptions |
+| **Data Export** | API download | Download learner data |
+| **Database Sync** | `/database-sync` | Configure external database replication |
+
+<Note>
+All parent features respect your children's privacy and are designed to support their learning without creating pressure or surveillance.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="View Dashboard Guide" icon="gauge" href="/parents/dashboard">
+    Learn about the parent dashboard interface
+  </Card>
+  
+  <Card title="Add Children" icon="user-plus" href="/parents/adding-children">
+    Create learner accounts for your children
+  </Card>
+  
+  <Card title="Track Progress" icon="chart-line" href="/parents/progress-tracking">
+    Monitor learning progress and achievements
+  </Card>
+  
+  <Card title="Manage Rewards" icon="gift" href="/parents/rewards-system">
+    Set up motivational rewards
+  </Card>
+</CardGroup>

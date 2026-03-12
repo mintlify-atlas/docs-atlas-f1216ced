@@ -1,0 +1,292 @@
+---
+title: Adaptive Learning
+description: How Sunschool adapts content to each learner's performance and needs
+icon: chart-line
+---
+
+## Overview
+
+Sunschool's adaptive learning system analyzes learner performance in real-time and adjusts content difficulty, recommends subjects, and identifies areas needing reinforcement.
+
+## Performance Tracking
+
+### Subject-Level Performance
+
+The system tracks performance across all subjects:
+
+```typescript
+// From server/services/subject-recommendation.ts:157
+export function updateSubjectPerformance(
+  profile: LearnerProfile,
+  lesson: Lesson
+): Record<string, any> {
+  const performances = profile.subjectPerformance || {};
+  const current = performances[lesson.subject] || {
+    score: 0,
+    lessonCount: 0,
+    lastAttempted: new Date().toISOString(),
+    masteryLevel: 'beginner'
+  };
+  
+  // Calculate new average score
+  const newLessonCount = current.lessonCount + 1;
+  const newScore = Math.round(
+    (current.score * current.lessonCount + lesson.score) / newLessonCount
+  );
+  
+  // Determine mastery level
+  let masteryLevel = 'beginner';
+  if (newScore >= 85 && newLessonCount >= 5) {
+    masteryLevel = 'advanced';
+  } else if (newScore >= 70 && newLessonCount >= 3) {
+    masteryLevel = 'intermediate';
+  }
+  
+  performances[lesson.subject] = {
+    score: newScore,
+    lessonCount: newLessonCount,
+    lastAttempted: new Date().toISOString(),
+    masteryLevel
+  };
+  
+  return performances;
+}
+```
+
+### Mastery Levels
+
+<Steps>
+  <Step title="Beginner">
+    Less than 70% average or fewer than 3 lessons completed
+  </Step>
+  <Step title="Intermediate">
+    70-84% average with at least 3 lessons completed
+  </Step>
+  <Step title="Advanced">
+    85%+ average with at least 5 lessons completed
+  </Step>
+</Steps>
+
+## Identifying Struggling Areas
+
+The system automatically detects subjects where learners need additional support:
+
+```typescript
+// From server/services/subject-recommendation.ts:84
+export function identifyStrugglingAreas(lessonHistory: Lesson[]): string[] {
+  const subjectScores: Record<string, { total: number, count: number }> = {};
+  
+  // Only consider completed lessons with scores
+  const completedLessons = lessonHistory.filter(
+    lesson => lesson.status === 'DONE' && lesson.score !== null
+  );
+  
+  // Group scores by subject
+  for (const lesson of completedLessons) {
+    if (!lesson.subject || lesson.score === null) continue;
+    
+    if (!subjectScores[lesson.subject]) {
+      subjectScores[lesson.subject] = { total: 0, count: 0 };
+    }
+    
+    subjectScores[lesson.subject].total += lesson.score;
+    subjectScores[lesson.subject].count += 1;
+  }
+  
+  // Find subjects with average score below 70%
+  const strugglingSubjects = Object.entries(subjectScores)
+    .filter(([_, stats]) => (stats.total / stats.count) < 70)
+    .map(([subject, _]) => subject);
+  
+  return strugglingSubjects;
+}
+```
+
+<Warning>
+A subject is marked as "struggling" when the learner's average score falls below 70%. This triggers additional practice recommendations.
+</Warning>
+
+## Subject Recommendations
+
+### Grade-Appropriate Subjects
+
+Each grade level has a curated list of appropriate subjects:
+
+<Accordion title="View Subject Mapping by Grade">
+```typescript
+// From server/services/subject-recommendation.ts:4
+export const gradeSubjects: Record<number, string[]> = {
+  0: ['Alphabet', 'Numbers', 'Colors', 'Shapes', 'Basic Vocabulary', 'Social Skills'],
+  1: ['Reading', 'Writing', 'Basic Math', 'Science', 'Art', 'Social Studies'],
+  2: ['Reading', 'Writing', 'Math', 'Science', 'Art', 'Social Studies', 'Health'],
+  3: ['Reading', 'Writing', 'Math', 'Science', 'Social Studies', 'Art', 'Health', 'Geography'],
+  4: ['Reading', 'Writing', 'Math', 'Science', 'Social Studies', 'Geography', 'Art', 'Music'],
+  5: ['Reading', 'Literature', 'Writing', 'Math', 'Science', 'History', 'Geography', 'Art'],
+  6: ['Literature', 'Writing', 'Pre-Algebra', 'Earth Science', 'World History', 'Geography'],
+  7: ['Literature', 'Writing', 'Algebra', 'Life Science', 'History', 'Geography', 'Foreign Language'],
+  8: ['Literature', 'Writing', 'Algebra', 'Physical Science', 'History', 'Civics', 'Foreign Language'],
+  9: ['Literature', 'Composition', 'Geometry', 'Biology', 'World History', 'Foreign Language'],
+  10: ['Literature', 'Composition', 'Algebra II', 'Chemistry', 'History', 'Foreign Language'],
+  11: ['American Literature', 'Composition', 'Precalculus', 'Physics', 'US History'],
+  12: ['British Literature', 'Research Writing', 'Calculus', 'Advanced Science', 'Government']
+};
+```
+</Accordion>
+
+### Recommendation Algorithm
+
+The system recommends new subjects based on multiple factors:
+
+```typescript
+// From server/services/subject-recommendation.ts:119
+export function recommendSubjects(
+  profile: LearnerProfile,
+  lessonHistory: Lesson[]
+): string[] {
+  // Get appropriate subjects for the grade level
+  const gradeAppropriate = getSubjectsForGradeLevel(profile.gradeLevel);
+  
+  // Get subjects the learner is currently using
+  const currentSubjects = profile.subjects || [];
+  
+  // Get subjects the learner is struggling with
+  const strugglingSubjects = identifyStrugglingAreas(lessonHistory);
+  
+  // Find subjects that are appropriate but not yet assigned
+  const potentialNewSubjects = gradeAppropriate.filter(
+    subject => !currentSubjects.includes(subject)
+  );
+  
+  // Recommend up to 3 new subjects
+  const recommendations = potentialNewSubjects.slice(0, 3);
+  
+  // Add struggling subjects to work on if there's room
+  for (const subject of strugglingSubjects) {
+    if (recommendations.length < 3 && !recommendations.includes(subject)) {
+      recommendations.push(subject);
+    }
+  }
+  
+  return recommendations;
+}
+```
+
+## Subject Categories
+
+Subjects are organized into broader categories for better organization:
+
+<CardGroup cols={2}>
+  <Card title="Language Arts" icon="book-open">
+    Reading, Writing, Literature, Composition, Alphabet, Basic Vocabulary
+  </Card>
+  <Card title="Mathematics" icon="calculator">
+    Numbers, Basic Math, Pre-Algebra, Algebra, Geometry, Calculus
+  </Card>
+  <Card title="Science" icon="flask">
+    Earth Science, Life Science, Physical Science, Biology, Chemistry, Physics
+  </Card>
+  <Card title="Social Studies" icon="globe">
+    History, World History, US History, Government, Economics, Geography
+  </Card>
+  <Card title="Arts" icon="palette">
+    Art, Music, Drama, Painting, Drawing
+  </Card>
+  <Card title="Life Skills" icon="heart">
+    Health, Physical Education, Social Skills, Financial Literacy
+  </Card>
+  <Card title="World Languages" icon="language">
+    Spanish, French, German, Mandarin, Latin
+  </Card>
+  <Card title="Technology" icon="code">
+    Computer Science, Programming, Digital Media, Robotics
+  </Card>
+</CardGroup>
+
+## Difficulty Adjustment
+
+Lessons can be generated at three difficulty levels:
+
+<Tabs>
+  <Tab title="Beginner">
+    - Simplified vocabulary
+    - Concrete examples
+    - Step-by-step explanations
+    - More practice problems
+  </Tab>
+  <Tab title="Intermediate">
+    - Standard grade-level vocabulary
+    - Mixed concrete and abstract concepts
+    - Balanced explanation and practice
+  </Tab>
+  <Tab title="Advanced">
+    - Advanced vocabulary
+    - Abstract thinking encouraged
+    - Complex problem-solving
+    - Fewer hints, more independence
+  </Tab>
+</Tabs>
+
+## Personalized Learning Paths
+
+The adaptive system creates personalized learning paths by:
+
+<Steps>
+  <Step title="Analyze Performance">
+    Review all completed lessons and quiz scores
+  </Step>
+  <Step title="Identify Gaps">
+    Detect concepts and subjects below mastery threshold
+  </Step>
+  <Step title="Recommend Content">
+    Suggest new lessons in struggling areas and new grade-appropriate subjects
+  </Step>
+  <Step title="Adjust Difficulty">
+    Automatically set difficulty level based on recent performance
+  </Step>
+  <Step title="Track Progress">
+    Continuously monitor and update mastery levels
+  </Step>
+</Steps>
+
+## Performance Metrics
+
+The system tracks multiple metrics for adaptation:
+
+| Metric | Purpose | Threshold |
+|--------|---------|----------|
+| Average Score | Overall subject mastery | 70% for proficiency |
+| Lesson Count | Experience level | 3+ for intermediate, 5+ for advanced |
+| Recent Trend | Current trajectory | Last 5 lessons |
+| Concept Mastery | Specific skill tracking | 70% per concept |
+| Time to Complete | Engagement indicator | Compared to grade average |
+
+## Integration with Other Features
+
+<CardGroup cols={3}>
+  <Card title="Mastery System" icon="trophy" href="/features/mastery-system">
+    Detailed mastery calculations and decay
+  </Card>
+  <Card title="Concept Tracking" icon="brain" href="/features/concept-tracking">
+    Per-concept performance analysis
+  </Card>
+  <Card title="Reports" icon="chart-bar" href="/features/reports">
+    Visual progress and performance reports
+  </Card>
+</CardGroup>
+
+## Best Practices for Parents
+
+<AccordionGroup>
+  <Accordion title="Monitor Struggling Subjects">
+    Check the reports page regularly to see which subjects need additional support. The system automatically identifies these, but parent involvement helps.
+  </Accordion>
+  <Accordion title="Balance Challenge and Success">
+    Learners should experience both challenge and success. If scores are consistently too high (&gt;95%) or too low (&lt;60%), consider adjusting the subject selection.
+  </Accordion>
+  <Accordion title="Follow Recommendations">
+    The system's subject recommendations are based on grade-level standards and performance data. Following them helps maintain a balanced curriculum.
+  </Accordion>
+  <Accordion title="Celebrate Progress">
+    Use the mastery level progression (Beginner → Intermediate → Advanced) to celebrate milestones.
+  </Accordion>
+</AccordionGroup>

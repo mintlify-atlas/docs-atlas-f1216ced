@@ -1,0 +1,46 @@
+---
+title: 'User Management'
+description: 'Manage parent accounts and user profiles'
+icon: 'users'
+---
+
+## Get All Parents
+
+<Note>
+  **Authentication Required:** ADMIN role
+</Note>
+
+```bash GET /api/parents
+curl -X GET https://api.sunschool.xyz/api/parents \
+  -H "Authorization: Bearer {token}"
+```
+
+Returns a list of all parent accounts in the system.
+
+### Response
+
+```json Response Example
+[
+  {
+    "id": 1,
+    "username": "john_parent",
+    "email": "john@example.com",
+    "name": "John Doe",
+    "role": "PARENT",
+    "parentId": null
+  },
+  {
+    "id": 2,
+    "username": "jane_parent",
+    "email": "jane@example.com",
+    "name": "Jane Smith",
+    "role": "PARENT",
+    "parentId": null
+  }
+]
+```
+
+### Error Codes
+
+- **401** - Unauthorized (not authenticated)
+- **403** - Forbidden (not an admin)

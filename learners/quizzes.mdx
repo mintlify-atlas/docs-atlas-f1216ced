@@ -1,0 +1,423 @@
+---
+title: Quiz Experience
+description: Taking quizzes, question types, immediate feedback, and scoring system
+icon: graduation-cap
+---
+
+## Taking Quizzes
+
+After reading a lesson, learners take a **quick challenge** to test their understanding. Quizzes are fun, interactive, and provide immediate feedback.
+
+### Starting a Quiz
+
+From the lesson page, learners tap the **"Let's Go!"** button:
+
+```typescript
+// From lesson-page.tsx:48-50
+const handleStartQuiz = () => {
+  navigation.navigate('QuizPage', { lessonId });
+};
+```
+
+### Pre-Quiz Screen
+
+Before diving in, learners see a friendly preparation screen:
+
+```typescript
+// From quiz-page.tsx:294-323
+{!quizStarted && !quizSubmitted && (
+  <ScrollView contentContainerStyle={styles.scrollContent}>
+    <View style={styles.preQuizCard}>
+      <Text style={styles.preQuizTitle}>
+        Ready for your challenge?
+      </Text>
+      <Text style={styles.preQuizSub}>
+        {displayQuestions.length} question{displayQuestions.length !== 1 ? 's' : ''} · take your time!
+      </Text>
+
+      {dolAllowedByParent && (
+        <View style={styles.dolCard}>
+          <View style={styles.dolHeader}>
+            <Zap size={20} color="#FF8F00" />
+            <Text style={styles.dolTitle}>Double-or-Nothing Active</Text>
+          </View>
+          <Text style={styles.dolDesc}>
+            Every 3rd question you can go for double points — or skip and play it safe!
+          </Text>
+        </View>
+      )}
+
+      <TouchableOpacity style={styles.startBtn} onPress={handleStartQuiz}>
+        <Text style={styles.startBtnText}>Start Quiz</Text>
+      </TouchableOpacity>
+    </View>
+  </ScrollView>
+)}
+```
+
+<Info>
+The pre-quiz screen shows:
+- Total number of questions
+- Double-or-Nothing notice (if enabled by parent)
+- Big "Start Quiz" button
+</Info>
+
+## Question Types
+
+Sunschool supports multiple question formats to keep quizzes engaging:
+
+### 1. Multiple Choice
+
+Most common question type with 4 answer options:
+
+```typescript
+// From schema.ts:116-129
+questions: {
+  text: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  difficulty?: "easy" | "medium" | "hard";
+  type?: "multiple_choice" | "true_false" | "image_based" | "sequence";
+  imageId?: string;
+  imageSvg?: string;
+}[];
+```
+
+### 2. Image-Based Questions
+
+Questions that reference lesson images:
+
+```typescript
+// From enhanced-lesson-service.ts:506-508
+const imageHint = enhancedLesson.images && enhancedLesson.images.length > 0
+  ? `\n\nAvailable lesson image IDs you can reference: ${enhancedLesson.images.map(i => `"${i.id}" (${i.description})`).join(', ')}`
+  : '';
+```
+
+<Note>
+Image-based questions include an `imageId` field that references one of the lesson's SVG illustrations.
+</Note>
+
+### 3. True/False
+
+Simple binary questions for quick comprehension checks.
+
+### 4. Sequence
+
+Questions requiring learners to order steps or events correctly.
+
+## Question Display
+
+```typescript
+// From quiz-page.tsx:449-513
+{displayQuestions.map((question, index) => {
+  const isDoubleEligible = dolAllowedByParent && (index + 1) % 3 === 0;
+  const hasDecided = doubleDecided.has(index);
+  const isDoubled = doubleQuestions.has(index);
+
+  return (
+    <View key={index} style={styles.questionContainer}>
+      <Text style={styles.questionNumber}>
+        Question {index + 1} of {displayQuestions.length}
+        {isDoubled && ' — 2x'}
+      </Text>
+
+      {/* Double-or-nothing prompt on every 3rd question */}
+      {isDoubleEligible && !hasDecided && (
+        <View style={styles.dolPrompt}>
+          // ... double-or-nothing UI
+        </View>
+      )}
+
+      <QuizComponent
+        question={question}
+        selectedAnswer={selectedAnswers[index]}
+        showAnswers={false}
+        onSelectAnswer={(answerIndex) => handleSelectAnswer(index, answerIndex)}
+      />
+    </View>
+  );
+})}
+```
+
+## Immediate Feedback
+
+After submitting, learners see instant results with detailed review.
+
+### Score Card
+
+```typescript
+// From quiz-page.tsx:338-365
+<View style={styles.scoreCard}>
+  <View style={styles.scoreIconContainer}>
+    {quizScore.score >= 70 ? (
+      <CheckCircle size={56} color={theme.colors.success} />
+    ) : (
+      <AlertCircle size={56} color={theme.colors.warning} />
+    )}
+  </View>
+  <Text style={styles.scoreTitle}>
+    {quizScore.score >= 90 ? 'Amazing!' : 
+     quizScore.score >= 70 ? 'Great job!' : 
+     'Almost there! Keep going!'}
+  </Text>
+  <Text style={styles.scoreText}>
+    You got {quizScore.correctCount} out of {quizScore.totalQuestions} right
+  </Text>
+  <View style={styles.scoreBarContainer}>
+    <View style={[
+      styles.scoreBar, 
+      { width: `${quizScore.score}%`, 
+        backgroundColor: quizScore.score >= 70 ? theme.colors.success : theme.colors.warning }
+    ]} />
+  </View>
+  <Text style={styles.scorePercentage}>
+    {quizScore.score}%
+  </Text>
+</View>
+```
+
+### Feedback Messages
+
+<Tabs>
+  <Tab title="90-100%">
+    **"Amazing!"**
+    - Green checkmark icon
+    - Success color scheme
+    - Confetti animation
+  </Tab>
+  
+  <Tab title="70-89%">
+    **"Great job!"**
+    - Green checkmark icon
+    - Success color scheme
+    - Positive reinforcement
+  </Tab>
+  
+  <Tab title="Below 70%">
+    **"Almost there! Keep going!"**
+    - Warning icon
+    - Encouraging tone
+    - No negative language
+  </Tab>
+</Tabs>
+
+## Scoring and Progress
+
+### Point Calculation
+
+Base points are earned for correct answers:
+
+```typescript
+// Points awarded based on correctness
+const basePointsPerQuestion = 1;
+const pointsAwarded = correctCount * basePointsPerQuestion;
+```
+
+### Double-or-Nothing Mode
+
+If enabled by parent, learners can risk points for bigger rewards:
+
+```typescript
+// From quiz-page.tsx:462-492
+{isDoubleEligible && !hasDecided && (
+  <View style={styles.dolPrompt}>
+    <View style={styles.dolPromptHeader}>
+      <Zap size={18} color="#FF8F00" />
+      <Text style={styles.dolPromptTitle}>Double or Nothing?</Text>
+    </View>
+    <Text style={styles.dolPromptDesc}>
+      Get 2x points if correct, lose 1 point if wrong.
+    </Text>
+    <View style={styles.dolPromptButtons}>
+      <TouchableOpacity
+        style={styles.dolGoBtn}
+        onPress={() => {
+          setDoubleQuestions(prev => new Set(prev).add(index));
+          setDoubleDecided(prev => new Set(prev).add(index));
+        }}
+      >
+        <Zap size={14} color="#fff" />
+        <Text style={styles.dolGoBtnText}>Go for it!</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.dolSkipBtn}
+        onPress={() => {
+          setDoubleDecided(prev => new Set(prev).add(index));
+        }}
+      >
+        <Text style={styles.dolSkipBtnText}>Play it safe</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+)}
+```
+
+<Warning>
+**Double-or-Nothing Rules**:
+- Every 3rd question offers the choice
+- **Correct answer**: 2x points
+- **Wrong answer**: -1 point from balance
+- Must be enabled by parent in settings
+</Warning>
+
+### Points Summary
+
+```typescript
+// From quiz-page.tsx:366-396
+<View style={styles.pointsSummary}>
+  <View style={styles.pointsRow}>
+    <Text style={styles.pointsEmoji}>⭐</Text>
+    <Text style={styles.pointsLabel}>
+      +{quizScore.pointsAwarded ?? 0} pts earned{quizScore.doubleOrLoss ? ' (×2!)' : ''}
+    </Text>
+  </View>
+  {quizScore.pointsDeducted > 0 && (
+    <View style={styles.pointsRow}>
+      <Text style={styles.pointsEmoji}>⚡</Text>
+      <Text style={styles.pointsLabel}>
+        -{quizScore.pointsDeducted} pts (double-or-loss penalty)
+      </Text>
+    </View>
+  )}
+  <View style={styles.pointsRow}>
+    <Text style={styles.pointsEmoji}>💰</Text>
+    <Text style={styles.pointsLabel}>
+      Balance: {quizScore.newBalance} pts
+    </Text>
+  </View>
+</View>
+```
+
+## Answer Review
+
+After seeing their score, learners can review all questions:
+
+```typescript
+// From quiz-page.tsx:413-433
+<View style={styles.reviewSection}>
+  <Text style={styles.reviewTitle}>Let's Review</Text>
+  {displayQuestions.map((question, index) => {
+    const wasDoubled = quizScore?.doubleQuestionIndices?.includes(index);
+    return (
+      <View key={index}>
+        {wasDoubled && (
+          <View style={styles.dolBadge}>
+            <Text style={styles.dolBadgeText}>
+              <Zap size={12} color="#FF8F00" /> Double-or-Nothing
+            </Text>
+          </View>
+        )}
+        <QuizComponent
+          question={question}
+          selectedAnswer={selectedAnswers[index]}
+          showAnswers={true}
+          onSelectAnswer={() => {}}
+        />
+      </View>
+    );
+  })}
+</View>
+```
+
+### Review Features
+
+<Check>
+**What learners see in review**:
+- All questions with their selected answers
+- Correct answers highlighted in green
+- Wrong answers marked clearly
+- Explanations for each question
+- Badge for double-or-nothing questions
+</Check>
+
+## Point Delegation
+
+After earning points, learners can save them toward reward goals:
+
+```typescript
+// From quiz-page.tsx:241-279
+<Modal visible={showDelegation && !!quizScore && rewardGoals.length > 0}>
+  <View style={styles.delegationOverlay}>
+    <View style={styles.delegationBox}>
+      <Text style={styles.delegationTitle}>
+        🎉 You earned {quizScore?.pointsAwarded ?? 0} pts!
+      </Text>
+      <Text style={styles.delegationSub}>
+        Save them toward a reward goal:
+      </Text>
+      <ScrollView>
+        {rewardGoals.filter((g: any) => g.isActive).map((g: any) => (
+          <TouchableOpacity 
+            key={g.id} 
+            style={styles.delegationGoalRow}
+            onPress={() => { 
+              saveDelegation(g.id, quizScore!.pointsAwarded); 
+              setShowDelegation(false); 
+            }}
+          >
+            {/* Goal card with progress */}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <TouchableOpacity 
+        style={styles.skipDelegation}
+        onPress={() => setShowDelegation(false)}
+      >
+        <Text>Keep in Balance</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
+```
+
+<Info>
+If learners have active reward goals, they see a modal after the quiz prompting them to delegate points. They can choose a goal or keep points in their general balance.
+</Info>
+
+## Progress Tracking
+
+Quiz completion updates multiple systems:
+
+```typescript
+// From quiz-page.tsx:111-127
+onSuccess: (data) => {
+  setQuizSubmitted(true);
+  setQuizScore(data);
+  if (data.score >= 70) setShowConfetti(true);
+  if (data.newAchievements && data.newAchievements.length > 0) {
+    setTimeout(() => setShowAchievements(true), 1500);
+  }
+  queryClient.invalidateQueries({ queryKey: ['/api/lessons/active'] });
+  queryClient.invalidateQueries({ queryKey: ['/api/achievements'] });
+  queryClient.invalidateQueries({ queryKey: ['/api/lessons/history'] });
+  queryClient.invalidateQueries({ queryKey: ['/api/points'] });
+  queryClient.invalidateQueries({ queryKey: ['/api/points/balance'] });
+  queryClient.invalidateQueries({ queryKey: ['/api/mastery'] });
+  if (lesson?.learnerId) {
+    queryClient.invalidateQueries({ queryKey: ['/api/learner-profile', lesson.learnerId] });
+  }
+}
+```
+
+### What Gets Updated
+
+1. **Points balance** - New points added to learner account
+2. **Achievements** - Check for newly earned badges
+3. **Lesson history** - Quiz marked as complete
+4. **Mastery tracking** - Concept performance updated
+5. **Knowledge graph** - New concepts added to graph
+6. **Learner profile** - Statistics refreshed
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Achievements" icon="trophy" href="/learners/achievements">
+    Learn about badges earned from quizzes
+  </Card>
+  
+  <Card title="Concept Mastery" icon="brain" href="/learners/concept-mastery">
+    See how quiz performance tracks mastery
+  </Card>
+</CardGroup>

@@ -1,0 +1,539 @@
+---
+title: Data Export
+description: Export learner data for backup, portability, and analysis
+---
+
+# Data Export
+
+Sunschool provides a simple data export feature that allows parents to download complete learner information as JSON files. This supports data portability, backup, and offline analysis.
+
+## What is Data Export?
+
+Data export generates a comprehensive JSON file containing all data for a specific learner:
+
+- **Learner account** information
+- **Profile** including grade level and settings
+- **Complete lesson history** with scores and timestamps
+- **All achievements** earned
+- **Export metadata** (date, exported by)
+
+## Access and Permissions
+
+<Info>
+Data export is available to **PARENT** and **ADMIN** role users. Parents can export data for their own children; admins can export for any learner.
+</Info>
+
+From `server/routes.ts:1360-1408`:
+
+```typescript
+app.get("/api/export", hasRole(["PARENT", "ADMIN"]), asyncHandler(async (req: AuthRequest, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  if (!req.query.learnerId) {
+    return res.status(400).json({ error: "learnerId is required" });
+  }
+
+  const learnerId = req.query.learnerId as string;
+
+  // Verify parent has access to this learner
+  if (req.user.role === "PARENT") {
+    const children = await storage.getUsersByParentId(req.user.id);
+    if (!children.some(child => child.id.toString() === learnerId.toString())) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+  }
+
+  // Get all the learner data
+  const [learner, profile, lessons, achievements] = await Promise.all([
+    storage.getUser(learnerId),
+    storage.getLearnerProfile(learnerId),
+    storage.getLessonHistory(learnerId, 1000), // Get a large number of lessons
+    storage.getAchievements(learnerId)
+  ]);
+
+  if (!learner) {
+    res.status(404).json({ error: "Learner not found" });
+  }
+
+  // Remove sensitive information
+  const { password: _, ...learnerData } = learner;
+
+  // Set filename for download
+  const filename = `learner-data-${learnerId}-${new Date().toISOString().split('T')[0]}.json`;
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', 'application/json');
+
+  // Return combined data
+  res.json({
+    learner: learnerData,
+    profile,
+    lessons,
+    achievements,
+    exportDate: new Date().toISOString(),
+    exportedBy: req.user.id
+  });
+}));
+```
+
+## How to Export Data
+
+### From the Parent Dashboard
+
+From `parent-dashboard.tsx:228-236`:
+
+```typescript
+<TouchableOpacity
+  style={[styles.actionButton, styles.exportButton]}
+  onPress={() => {
+    // Open export endpoint in new window for download
+    window.open(`/api/export?learnerId=${item.id}`, '_blank');
+  }}
+>
+  <Download size={16} color={colors.onPrimary} />
+  <Text style={styles.actionButtonText}>Export</Text>
+</TouchableOpacity>
+```
+
+### From the Reports Page
+
+From `reports-page.tsx:70-73`:
+
+```typescript
+const handleDownloadReport = () => {
+  if (!selectedLearnerId) return;
+  window.open(`/api/export?learnerId=${selectedLearnerId}`, '_blank');
+};
+```
+
+And in the UI (lines 156-162):
+
+```typescript
+<TouchableOpacity 
+  style={styles.downloadButton}
+  onPress={handleDownloadReport}
+>
+  <Download size={16} color={colors.onPrimary} />
+  <Text style={styles.downloadButtonText}>Download Full Report</Text>
+</TouchableOpacity>
+```
+
+<Steps>
+  <Step title="Navigate to Learner">
+    Go to the parent dashboard or learners page and locate the child whose data you want to export.
+  </Step>
+  
+  <Step title="Click Export Button">
+    Click the "Export" button (with download icon) on the learner's card.
+  </Step>
+  
+  <Step title="Download Begins">
+    A JSON file downloads automatically with the naming format:
+    ```
+    learner-data-{learnerId}-{YYYY-MM-DD}.json
+    ```
+    
+    Example: `learner-data-123-2026-03-12.json`
+  </Step>
+</Steps>
+
+## Export File Format
+
+The exported JSON file has this structure:
+
+```json
+{
+  "learner": {
+    "id": 123,
+    "username": "child_username",
+    "email": "child@example.com",
+    "name": "Child Name",
+    "role": "LEARNER",
+    "parentId": 456,
+    "createdAt": "2026-01-15T10:30:00.000Z",
+    "updatedAt": "2026-03-12T14:22:00.000Z"
+  },
+  "profile": {
+    "userId": 123,
+    "gradeLevel": 5,
+    "subjects": ["Math", "Reading", "Science"],
+    "recommendedSubjects": ["History"],
+    "strugglingAreas": [],
+    "graph": {
+      "nodes": [
+        { "id": "math", "label": "Mathematics" },
+        { "id": "algebra", "label": "Algebra" }
+      ],
+      "edges": [
+        { "source": "math", "target": "algebra" }
+      ]
+    },
+    "preferences": {},
+    "createdAt": "2026-01-15T10:30:00.000Z",
+    "updatedAt": "2026-03-10T09:15:00.000Z"
+  },
+  "lessons": [
+    {
+      "id": "lesson-789",
+      "userId": 123,
+      "subject": "Math",
+      "topic": "Fractions",
+      "gradeLevel": 5,
+      "status": "DONE",
+      "score": 85,
+      "spec": {
+        "title": "Introduction to Fractions",
+        "sections": [...]
+      },
+      "createdAt": "2026-03-10T15:00:00.000Z",
+      "completedAt": "2026-03-10T15:45:00.000Z"
+    }
+  ],
+  "achievements": [
+    {
+      "id": "achievement-101",
+      "userId": 123,
+      "type": "first_lesson_complete",
+      "payload": {
+        "title": "First Lesson Complete!",
+        "description": "You finished your first lesson"
+      },
+      "awardedAt": "2026-03-10T15:45:00.000Z"
+    }
+  ],
+  "exportDate": "2026-03-12T16:30:00.000Z",
+  "exportedBy": 456
+}
+```
+
+## What Data is Included
+
+### Learner Information
+
+From the `learner` object:
+
+<CardGroup cols={2}>
+  <Card title="Account Details" icon="user">
+    - User ID
+    - Username
+    - Email address
+    - Display name
+    - Role (always LEARNER)
+    - Parent ID
+  </Card>
+  
+  <Card title="Timestamps" icon="clock">
+    - Account created date
+    - Last updated date
+    
+    <Info>
+    Passwords are **never** included in exports for security.
+    </Info>
+  </Card>
+</CardGroup>
+
+### Profile Data
+
+From the `profile` object:
+
+- **Grade Level** - Current grade (0 for K, 1-12)
+- **Subjects** - Active learning subjects
+- **Recommended Subjects** - AI-suggested topics
+- **Struggling Areas** - Topics needing attention
+- **Knowledge Graph** - Visual representation of learned concepts
+- **Preferences** - Custom settings and configurations
+
+### Lesson History
+
+From the `lessons` array (up to 1000 most recent):
+
+```typescript
+storage.getLessonHistory(learnerId, 1000)
+```
+
+Each lesson includes:
+- Lesson ID and timestamps
+- Subject and topic
+- Grade level
+- Completion status (ACTIVE, DONE, ABANDONED)
+- Score (percentage)
+- Full lesson specification:
+  - Title and description
+  - Learning objectives
+  - Content sections
+  - Quiz questions and answers
+  - Images and media
+
+<Info>
+The export fetches the 1000 most recent lessons. For learners with more lessons, consider using the database sync feature for complete history.
+</Info>
+
+### Achievements
+
+From the `achievements` array:
+
+- Achievement ID and type
+- Award date and time
+- Payload containing:
+  - Title
+  - Description
+  - Additional metadata
+
+### Export Metadata
+
+- **exportDate** - When the export was generated (ISO 8601 timestamp)
+- **exportedBy** - User ID of the parent who requested the export
+
+## Using Exported Data
+
+### Backup and Archival
+
+<Steps>
+  <Step title="Regular Exports">
+    Export data monthly or quarterly to maintain backups.
+  </Step>
+  
+  <Step title="Organize Files">
+    Store exports in a structured folder:
+    ```
+    backups/
+      2026-01/
+        learner-data-123-2026-01-31.json
+      2026-02/
+        learner-data-123-2026-02-28.json
+      2026-03/
+        learner-data-123-2026-03-31.json
+    ```
+  </Step>
+  
+  <Step title="Version Control">
+    The filename includes the date, making it easy to track when data was exported.
+  </Step>
+</Steps>
+
+### Analysis and Reporting
+
+You can process the JSON data with:
+
+#### Python Example
+
+```python
+import json
+import pandas as pd
+
+# Load export file
+with open('learner-data-123-2026-03-12.json', 'r') as f:
+    data = json.load(f)
+
+# Convert lessons to DataFrame
+lessons_df = pd.DataFrame(data['lessons'])
+
+# Analyze performance
+avg_score = lessons_df['score'].mean()
+subject_performance = lessons_df.groupby('subject')['score'].mean()
+
+print(f"Average Score: {avg_score:.1f}%")
+print("\nPerformance by Subject:")
+print(subject_performance)
+```
+
+#### JavaScript Example
+
+```javascript
+// Read export file (Node.js)
+const fs = require('fs');
+const data = JSON.parse(fs.readFileSync('learner-data-123-2026-03-12.json', 'utf8'));
+
+// Calculate statistics
+const lessons = data.lessons;
+const completedLessons = lessons.filter(l => l.status === 'DONE');
+const avgScore = completedLessons.reduce((sum, l) => sum + l.score, 0) / completedLessons.length;
+
+console.log(`Completed Lessons: ${completedLessons.length}`);
+console.log(`Average Score: ${avgScore.toFixed(1)}%`);
+
+// Group by subject
+const bySubject = completedLessons.reduce((acc, lesson) => {
+  if (!acc[lesson.subject]) acc[lesson.subject] = [];
+  acc[lesson.subject].push(lesson.score);
+  return acc;
+}, {});
+
+for (const [subject, scores] of Object.entries(bySubject)) {
+  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+  console.log(`${subject}: ${avg.toFixed(1)}% (${scores.length} lessons)`);
+}
+```
+
+### Data Portability
+
+The JSON format is:
+- **Universal** - Works with any programming language
+- **Human-readable** - Can be opened in text editors
+- **Machine-parseable** - Easy to process programmatically
+- **Structured** - Clear organization of related data
+
+You can:
+- Import into spreadsheet applications
+- Load into databases
+- Process with analytics tools
+- Share with schools or tutors
+- Archive for long-term storage
+
+## Privacy and Data Ownership
+
+<Warning>
+**Important Privacy Information:**
+
+1. **You own this data** - Sunschool provides exports to ensure you maintain ownership
+2. **No passwords** - Sensitive authentication data is never exported
+3. **Secure storage** - Store exported files securely as they contain personal information
+4. **Parent control** - Only parents can export their children's data
+5. **Complete data** - You get all non-sensitive information
+</Warning>
+
+### GDPR and Data Rights
+
+Data export supports:
+
+- **Right to access** - View all data Sunschool has about a learner
+- **Right to portability** - Take data to another platform
+- **Right to erasure** - Export before account deletion
+- **Transparency** - See exactly what information exists
+
+## Comparison: Export vs. Database Sync
+
+<Tabs>
+  <Tab title="Data Export">
+    **Best for:**
+    - Quick backups
+    - One-time data retrieval
+    - Sharing with third parties
+    - Simple analysis
+    - No infrastructure required
+    
+    **Characteristics:**
+    - Manual download
+    - JSON file format
+    - Point-in-time snapshot
+    - Limited to 1000 lessons
+    - Immediate availability
+  </Tab>
+  
+  <Tab title="Database Sync">
+    **Best for:**
+    - Continuous backup
+    - Real-time integration
+    - Complex queries
+    - Large datasets
+    - Business intelligence
+    
+    **Characteristics:**
+    - Automatic synchronization
+    - PostgreSQL database
+    - Always up-to-date
+    - Complete history
+    - Requires database setup
+  </Tab>
+</Tabs>
+
+## Limitations
+
+<AccordionGroup>
+  <Accordion title="Lesson History Limit">
+    Exports include up to **1000 most recent lessons**. For complete history:
+    - Use multiple exports over time
+    - Or use database sync feature
+    - Or contact support for custom exports
+  </Accordion>
+  
+  <Accordion title="No Automatic Scheduling">
+    Exports are manual. To automate:
+    - Use the database sync feature
+    - Or build custom API integration
+    - Or use a scheduled script to trigger exports
+  </Accordion>
+  
+  <Accordion title="File Size">
+    Large lesson histories can result in big files:
+    - 1000 lessons ≈ 5-10 MB typically
+    - Includes full lesson specs and quiz data
+    - May take a moment to generate
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Regular Exports" icon="calendar">
+    Export data monthly to maintain backup history and track long-term progress.
+  </Card>
+  
+  <Card title="Secure Storage" icon="lock">
+    Store exports in encrypted or password-protected locations. They contain personal information.
+  </Card>
+  
+  <Card title="Meaningful Filenames" icon="file">
+    Keep the auto-generated filenames - they include date and learner ID for easy organization.
+  </Card>
+  
+  <Card title="Verify Downloads" icon="check-circle">
+    After exporting, open the file to verify it contains expected data before relying on it.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Export button doesn't work">
+    Check:
+    1. You're logged in as a PARENT or ADMIN
+    2. You have permission to view this learner's data
+    3. The learner ID is valid
+    4. Your browser allows pop-up windows (export opens in new tab)
+  </Accordion>
+  
+  <Accordion title="File won't open">
+    The export is a JSON file:
+    1. Open with a text editor (VS Code, Notepad++, etc.)
+    2. Or use online JSON viewers
+    3. Or process with programming languages
+    4. Check file wasn't corrupted during download
+  </Accordion>
+  
+  <Accordion title="Missing data in export">
+    Verify:
+    1. The learner actually has data (check dashboard)
+    2. You exported the correct learner
+    3. Data wasn't recently added (try refreshing and re-exporting)
+    4. No errors occurred during export (check browser console)
+  </Accordion>
+  
+  <Accordion title="403 Forbidden error">
+    This means:
+    1. You don't have permission for this learner
+    2. The learner isn't one of your children (for parents)
+    3. Session expired - try logging out and back in
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Sync" icon="database" href="/parents/database-sync">
+    Learn about continuous database replication
+  </Card>
+  
+  <Card title="Progress Tracking" icon="chart-line" href="/parents/progress-tracking">
+    View learning data in the Sunschool UI
+  </Card>
+  
+  <Card title="Reports" icon="file-text" href="/parents/reports-page">
+    Generate and view analytics reports
+  </Card>
+  
+  <Card title="Dashboard" icon="gauge" href="/parents/dashboard">
+    Return to the main parent view
+  </Card>
+</CardGroup>

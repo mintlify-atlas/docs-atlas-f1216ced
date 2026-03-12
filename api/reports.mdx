@@ -1,0 +1,249 @@
+---
+title: 'Reports'
+description: 'Generate progress reports and analytics'
+icon: 'chart-bar'
+---
+
+## Get Reports
+
+<Note>
+  **Authentication Required:** Any authenticated user with access to the learner
+</Note>
+
+```bash GET /api/reports
+curl -X GET https://api.sunschool.xyz/api/reports?learnerId=3&type=progress \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="learnerId" type="string" required>
+  Learner ID to generate report for
+</ParamField>
+
+<ParamField query="type" type="string">
+  Report type: `all`, `progress`, `lessons`, or `achievements` (default: `all`)
+</ParamField>
+
+### Authorization
+
+- **ADMIN**: Can generate reports for any learner
+- **PARENT**: Can generate reports for their children
+- **LEARNER**: Can generate their own report
+
+---
+
+## Progress Report (type=progress or type=all)
+
+### Response
+
+<ResponseField name="learner" type="object">
+  Learner user object (without password)
+</ResponseField>
+
+<ResponseField name="profile" type="object">
+  Learner profile with subjects and grade level
+</ResponseField>
+
+<ResponseField name="analytics" type="object">
+  <Expandable title="properties">
+    <ResponseField name="lessonsCompleted" type="number">
+      Number of completed lessons
+    </ResponseField>
+    <ResponseField name="lessonsActive" type="number">
+      Number of active lessons
+    </ResponseField>
+    <ResponseField name="lessonsQueued" type="number">
+      Number of queued lessons
+    </ResponseField>
+    <ResponseField name="totalLessons" type="number">
+      Total number of lessons
+    </ResponseField>
+    <ResponseField name="achievementsCount" type="number">
+      Number of achievements earned
+    </ResponseField>
+    <ResponseField name="conceptsLearned" type="number">
+      Number of unique concepts learned
+    </ResponseField>
+    <ResponseField name="progressRate" type="number">
+      Completion rate percentage (0-100)
+    </ResponseField>
+    <ResponseField name="subjectDistribution" type="object">
+      Object mapping subjects to lesson counts
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="subjectPerformance" type="object">
+  Performance metrics by subject
+</ResponseField>
+
+<ResponseField name="reportGeneratedAt" type="string">
+  ISO timestamp of report generation
+</ResponseField>
+
+```json Progress Report Example
+{
+  "learner": {
+    "id": 3,
+    "username": "alice-123456",
+    "name": "Alice",
+    "email": "alice@example.com",
+    "role": "LEARNER",
+    "parentId": 1
+  },
+  "profile": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "userId": "3",
+    "gradeLevel": 5,
+    "subjects": ["Math", "Science", "Reading"],
+    "subjectPerformance": {
+      "Math": {"averageScore": 85, "lessonsCompleted": 12},
+      "Science": {"averageScore": 92, "lessonsCompleted": 8}
+    },
+    "recommendedSubjects": ["History"],
+    "strugglingAreas": ["Fractions"]
+  },
+  "analytics": {
+    "lessonsCompleted": 20,
+    "lessonsActive": 1,
+    "lessonsQueued": 0,
+    "totalLessons": 21,
+    "achievementsCount": 5,
+    "conceptsLearned": 42,
+    "progressRate": 95.24,
+    "subjectDistribution": {
+      "Math": 12,
+      "Science": 8,
+      "Reading": 1
+    }
+  },
+  "subjectPerformance": {
+    "Math": {"averageScore": 85, "lessonsCompleted": 12},
+    "Science": {"averageScore": 92, "lessonsCompleted": 8}
+  },
+  "reportGeneratedAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+---
+
+## Lessons Report (type=lessons)
+
+### Response
+
+<ResponseField name="lessons" type="array">
+  Array of all lessons for the learner
+</ResponseField>
+
+<ResponseField name="reportGeneratedAt" type="string">
+  ISO timestamp of report generation
+</ResponseField>
+
+```json Lessons Report Example
+{
+  "lessons": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "learnerId": 3,
+      "subject": "Math",
+      "status": "DONE",
+      "score": 85,
+      "difficulty": "beginner",
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "learnerId": 3,
+      "subject": "Science",
+      "status": "DONE",
+      "score": 92,
+      "difficulty": "beginner",
+      "createdAt": "2024-01-14T09:15:00.000Z"
+    }
+  ],
+  "reportGeneratedAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+---
+
+## Achievements Report (type=achievements)
+
+### Response
+
+<ResponseField name="achievements" type="array">
+  Array of all achievements earned by the learner
+</ResponseField>
+
+<ResponseField name="reportGeneratedAt" type="string">
+  ISO timestamp of report generation
+</ResponseField>
+
+```json Achievements Report Example
+{
+  "achievements": [
+    {
+      "id": "ach_123456",
+      "learnerId": "3",
+      "type": "FIRST_PERFECT",
+      "payload": {
+        "title": "Perfect Score!",
+        "description": "Got 100% on your first quiz",
+        "icon": "🌟"
+      },
+      "earnedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "reportGeneratedAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+---
+
+## Error Codes
+
+- **400** - learnerId is required
+- **400** - Invalid report type
+- **401** - Unauthorized
+- **403** - Forbidden
+- **404** - Learner not found
+- **500** - Failed to generate report
+
+---
+
+## Use Cases
+
+### Parent Dashboard
+
+Use `type=progress` to get comprehensive analytics for displaying on a parent dashboard:
+
+```bash
+GET /api/reports?learnerId=3&type=progress
+```
+
+### Detailed Lesson History
+
+Use `type=lessons` to get a full list of all lessons completed:
+
+```bash
+GET /api/reports?learnerId=3&type=lessons
+```
+
+### Achievement Gallery
+
+Use `type=achievements` to display all earned achievements:
+
+```bash
+GET /api/reports?learnerId=3&type=achievements
+```
+
+### Complete Data Export
+
+Use `type=all` (or omit the type parameter) to get everything:
+
+```bash
+GET /api/reports?learnerId=3&type=all
+```
+
+<Note>
+  The `conceptsLearned` metric is calculated from the mastery service and represents unique concepts the learner has encountered across all lessons.
+</Note>

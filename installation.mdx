@@ -1,0 +1,534 @@
+---
+title: Installation
+description: Self-host Sunschool on your own infrastructure with full control over data and AI providers.
+---
+
+# Installation
+
+Sunschool is fully open-source and can be self-hosted on your own infrastructure. This guide walks you through setting up a production-ready instance.
+
+<Note>
+  Prefer a hosted solution? Visit [sunschool.xyz](https://sunschool.xyz) for a managed instance with automatic updates and backups.
+</Note>
+
+---
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+<CardGroup cols={2}>
+  <Card title="Node.js v20+" icon="node-js">
+    Runtime for the server and client. **v22 recommended** for best performance.
+  </Card>
+  <Card title="PostgreSQL" icon="database">
+    Relational database for storing users, lessons, and analytics.
+  </Card>
+  <Card title="npm" icon="npm">
+    Package manager included with Node.js.
+  </Card>
+  <Card title="Git" icon="git">
+    Version control for cloning the repository.
+  </Card>
+</CardGroup>
+
+### System Requirements
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| CPU | 1 core | 2+ cores |
+| RAM | 512 MB | 2 GB |
+| Storage | 1 GB | 5 GB |
+| Network | 1 Mbps | 10 Mbps |
+
+<Warning>
+  AI lesson generation requires external API calls. Ensure your server has outbound internet access to OpenRouter, Perplexity, or Bittensor endpoints.
+</Warning>
+
+---
+
+## Step 1: Clone the Repository
+
+Clone the Sunschool repository from GitHub:
+
+```bash
+git clone https://github.com/allonethingxyz/sunschool.git
+cd sunschool
+```
+
+### Repository Structure
+
+```
+sunschool/
+├── client/          # React frontend (Vite)
+├── server/          # Express.js API with JWT auth
+├── shared/          # TypeScript schemas and types
+├── scripts/         # Database and utility scripts
+├── drizzle/         # Migration files
+├── tests/           # Playwright e2e tests
+├── package.json     # Dependencies and scripts
+└── .env.example     # Environment variable template
+```
+
+---
+
+## Step 2: Install Dependencies
+
+Install all required packages:
+
+```bash
+npm install
+```
+
+### What Gets Installed
+
+Key dependencies from `package.json`:
+
+<CodeGroup>
+```json Backend
+{
+  "express": "^5.1.0",
+  "drizzle-orm": "^0.43.1",
+  "pg": "^8.15.6",
+  "jsonwebtoken": "^9.0.2",
+  "passport": "^0.7.0",
+  "axios": "^1.9.0",
+  "openai": "^4.99.0"
+}
+```
+
+```json Frontend
+{
+  "react": "^19.1.0",
+  "react-dom": "^19.1.0",
+  "@tanstack/react-query": "^5.74.11",
+  "wouter": "^3.7.0",
+  "react-native-web": "^0.20.0",
+  "vite": "^6.3.4"
+}
+```
+</CodeGroup>
+
+---
+
+## Step 3: Configure Environment Variables
+
+Create a `.env` file in the root directory:
+
+```bash
+cp .env.example .env
+```
+
+### Required Variables
+
+Edit `.env` and set the following:
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL connection string
+  
+  ```env
+  DATABASE_URL="postgresql://user:password@localhost:5432/sunschool"
+  ```
+</ParamField>
+
+<ParamField path="JWT_SECRET" type="string" required>
+  Secret key for signing JWT tokens (minimum 32 characters recommended)
+  
+  ```env
+  JWT_SECRET="your-jwt-secret-key-change-me"
+  ```
+</ParamField>
+
+<ParamField path="SESSION_SECRET" type="string" required>
+  Secret key for session management
+  
+  ```env
+  SESSION_SECRET="your-session-secret-change-me"
+  ```
+</ParamField>
+
+<ParamField path="OPENROUTER_API_KEY" type="string" required>
+  API key for OpenRouter (primary AI provider)
+  
+  ```env
+  OPENROUTER_API_KEY="sk-or-v1-..."
+  ```
+  
+  Get your key at [openrouter.ai](https://openrouter.ai)
+</ParamField>
+
+### Optional Variables
+
+<ParamField path="PERPLEXITY_API_KEY" type="string">
+  API key for Perplexity AI (alternative provider)
+  
+  ```env
+  PERPLEXITY_API_KEY="pplx-..."
+  ```
+</ParamField>
+
+<ParamField path="PORT" type="number" default="5000">
+  Port for the Express server
+  
+  ```env
+  PORT=5000
+  ```
+</ParamField>
+
+<ParamField path="DATABASE_SSL" type="boolean" default="true">
+  Enable SSL for database connections
+  
+  ```env
+  DATABASE_SSL=true
+  ```
+</ParamField>
+
+### Example Configuration
+
+<CodeGroup>
+```env Development
+# Development .env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+JWT_SECRET="dev-secret-change-in-production"
+SESSION_SECRET="dev-session-secret"
+OPENROUTER_API_KEY="sk-or-v1-..."
+PORT=5000
+USE_AI=1
+ENABLE_STATS=1
+```
+
+```env Production
+# Production .env
+DATABASE_URL="postgresql://user:pass@prod-db.example.com:5432/sunschool"
+JWT_SECRET="<generate-with-openssl-rand-base64-32>"
+SESSION_SECRET="<generate-with-openssl-rand-base64-32>"
+OPENROUTER_API_KEY="sk-or-v1-..."
+PERPLEXITY_API_KEY="pplx-..."
+PORT=5000
+DATABASE_SSL=true
+USE_AI=1
+ENABLE_STATS=1
+```
+</CodeGroup>
+
+<Warning>
+  **Never commit `.env` to version control.** The `.gitignore` file excludes it by default.
+</Warning>
+
+---
+
+## Step 4: Set Up the Database
+
+### Create the Database
+
+If you haven't already, create a PostgreSQL database:
+
+```bash
+psql -U postgres
+CREATE DATABASE sunschool;
+\q
+```
+
+### Run Migrations
+
+Sunschool uses **Drizzle ORM** for database migrations. Migrations run automatically on server startup, but you can run them manually:
+
+```bash
+npm run migrate
+```
+
+### Verify Schema
+
+Check that tables were created:
+
+```bash
+psql -U postgres -d sunschool -c "\dt"
+```
+
+Expected tables:
+
+- `users` — All accounts (admins, parents, learners)
+- `learner_profiles` — Grade levels, subjects, knowledge graphs
+- `lessons` — Generated lessons with content and status
+- `achievements` — Milestones and badges
+- `rewards` — Parent-defined redemption goals
+- `points_ledger` — Transaction log for earned/spent points
+- `sync_configs` — External database sync settings
+
+### Seed Test Data (Optional)
+
+Populate the database with sample users and lessons:
+
+```bash
+npm run db:seed
+```
+
+<Note>
+  Seeding creates test accounts. **Do not use in production** — it includes weak passwords.
+</Note>
+
+---
+
+## Step 5: Build the Frontend
+
+Compile the React client:
+
+```bash
+npm run build
+```
+
+This runs Vite to bundle the frontend:
+
+```bash
+# From package.json:7
+cd client && npx vite build
+```
+
+Output is written to `client/dist/` and served by Express in production.
+
+---
+
+## Step 6: Start the Server
+
+### Development Mode
+
+Run with hot-reloading:
+
+```bash
+npm run dev
+```
+
+This starts:
+
+- **Backend**: Express server on `http://localhost:5000`
+- **Frontend**: Vite dev server on `http://localhost:5173` (proxies API requests)
+
+### Production Mode
+
+Build and run the production server:
+
+```bash
+npm run build
+npm start
+```
+
+This uses the `deploy` script from `package.json:10`:
+
+```json
+"deploy": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_PROJECT=tsconfig.deploy.json ts-node server/index.ts"
+```
+
+The server:
+
+1. Runs auto-migrations on startup
+2. Serves the built frontend from `client/dist/`
+3. Exposes the API at `/api/*`
+4. Provides health checks at `/api/healthcheck`
+
+### Verify It's Running
+
+Check the health endpoint:
+
+```bash
+curl http://localhost:5000/api/healthcheck
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+---
+
+## Step 7: Create the First Admin Account
+
+Navigate to `http://localhost:5000` in your browser.
+
+### Auto-Promotion to Admin
+
+<Note>
+  **The first user to register is automatically promoted to Admin**, regardless of the role selected during registration.
+</Note>
+
+From `server/routes.ts:87-92`:
+
+```typescript
+// Check if this is the first user being registered
+const userCountResult = await db.select({ count: count() }).from(users);
+const isFirstUser = userCountResult[0].count === 0;
+
+// If this is the first user, make them an admin
+const effectiveRole = isFirstUser ? "ADMIN" : role;
+```
+
+### Registration Steps
+
+1. Click **Sign Up**
+2. Fill in:
+   - Username: `admin`
+   - Email: `admin@example.com`
+   - Name: `Admin User`
+   - Password: `<secure-password>`
+   - Role: `PARENT` (will be overridden to `ADMIN`)
+3. Accept the age disclaimer
+4. Submit
+
+You're now logged in as **Admin** with full system access.
+
+---
+
+## Step 8: Deploy to Production
+
+Sunschool is designed to deploy seamlessly to platforms like **Railway**, **Render**, or **Heroku**.
+
+### Railway Deployment
+
+Sunschool auto-deploys on push to `main`:
+
+1. Connect your GitHub repository to Railway
+2. Set environment variables in the Railway dashboard
+3. Railway detects the **NIXPACKS** buildpack automatically
+4. Push to `main` triggers deployment
+
+Health checks run at `/api/healthcheck` (from README.md:152).
+
+### Environment Variables in Railway
+
+Set these in the Railway dashboard (do not use `.env` in production):
+
+```env
+DATABASE_URL=<railway-postgres-url>
+JWT_SECRET=<generate-secure-key>
+SESSION_SECRET=<generate-secure-key>
+OPENROUTER_API_KEY=<your-key>
+PORT=5000
+```
+
+### Manual Deployment
+
+For other platforms:
+
+1. **Build**: `npm run build`
+2. **Set env vars**: Configure `DATABASE_URL`, `JWT_SECRET`, etc.
+3. **Run**: `npm start`
+4. **Expose port**: Ensure port `5000` (or `$PORT`) is accessible
+
+---
+
+## Post-Installation
+
+### Security Checklist
+
+<Steps>
+  <Step title="Generate Strong Secrets">
+    Use `openssl rand -base64 32` to generate `JWT_SECRET` and `SESSION_SECRET`
+  </Step>
+  <Step title="Enable HTTPS">
+    Use a reverse proxy (nginx, Caddy) or platform SSL (Railway, Render)
+  </Step>
+  <Step title="Restrict Database Access">
+    Use firewall rules to allow only your server's IP
+  </Step>
+  <Step title="Rotate API Keys">
+    Regularly rotate `OPENROUTER_API_KEY` and other third-party credentials
+  </Step>
+</Steps>
+
+### Backup Strategy
+
+<Warning>
+  Sunschool does not include built-in backups. Configure external backups for production.
+</Warning>
+
+#### PostgreSQL Backups
+
+```bash
+# Daily backup cron job
+0 2 * * * pg_dump -U postgres sunschool > /backups/sunschool-$(date +\%Y\%m\%d).sql
+```
+
+#### Database Sync Feature
+
+Sunschool includes an optional **external sync** feature:
+
+1. Parents configure a second PostgreSQL connection at `/database-sync`
+2. Data is pushed to the external database on-demand or continuously
+3. Use this for redundancy or data portability
+
+See `server/sync-utils.ts` for implementation.
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="cog" href="/configuration">
+    Configure AI providers, feature flags, and advanced settings
+  </Card>
+  <Card title="First Steps" icon="rocket" href="/first-steps">
+    Navigate the interface and create your first learners
+  </Card>
+  <Card title="Quickstart" icon="zap" href="/quickstart">
+    Walk through the full user experience
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/authentication">
+    Integrate with the Sunschool API
+  </Card>
+</CardGroup>
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Database connection fails">
+    **Symptoms**: `Error: connect ECONNREFUSED` or `FATAL: password authentication failed`
+    
+    **Solutions**:
+    - Verify `DATABASE_URL` format: `postgresql://user:password@host:port/database`
+    - Check PostgreSQL is running: `systemctl status postgresql`
+    - Test connection: `psql $DATABASE_URL`
+    - Ensure user has `CREATE` and `SELECT` permissions
+  </Accordion>
+  
+  <Accordion title="Migrations don't run">
+    **Symptoms**: Tables don't exist, server crashes on startup
+    
+    **Solutions**:
+    - Run migrations manually: `npm run migrate`
+    - Check server logs for Drizzle errors
+    - Verify database user has schema modification permissions
+    - Delete and recreate the database if schema is corrupted
+  </Accordion>
+  
+  <Accordion title="Frontend doesn't load">
+    **Symptoms**: Blank page, 404 errors
+    
+    **Solutions**:
+    - Run `npm run build` to compile the frontend
+    - Check `client/dist/` exists and contains `index.html`
+    - Verify the server is serving static files (see `server/index.ts`)
+    - Clear browser cache and reload
+  </Accordion>
+  
+  <Accordion title="AI generation fails">
+    **Symptoms**: `Failed to generate lesson content`, 503 errors
+    
+    **Solutions**:
+    - Verify `OPENROUTER_API_KEY` is valid
+    - Check OpenRouter account has credits
+    - Test API key: `curl https://openrouter.ai/api/v1/models -H "Authorization: Bearer $OPENROUTER_API_KEY"`
+    - Check server logs for rate limiting or quota errors
+    - Set `USE_AI=0` in `.env` to disable AI features for testing
+  </Accordion>
+  
+  <Accordion title="Port already in use">
+    **Symptoms**: `EADDRINUSE: address already in use :::5000`
+    
+    **Solutions**:
+    - Change `PORT` in `.env` to an available port (e.g., `5001`)
+    - Kill the process using port 5000: `lsof -ti:5000 | xargs kill`
+    - Use a different port in Railway/platform settings
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,196 @@
+---
+title: 'Authentication'
+description: 'Register, login, and manage user authentication'
+icon: 'key'
+---
+
+## Register User
+
+<Note>
+  The first user registered in the system automatically becomes an ADMIN regardless of the requested role.
+</Note>
+
+```bash POST /register
+curl -X POST https://api.sunschool.xyz/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "john_parent",
+    "email": "john@example.com",
+    "name": "John Doe",
+    "role": "PARENT",
+    "password": "securePassword123",
+    "parentId": null
+  }'
+```
+
+<ParamField body="username" type="string" required>
+  Unique username for the account
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Email address for the account
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Full name of the user
+</ParamField>
+
+<ParamField body="role" type="string" required>
+  User role: `ADMIN`, `PARENT`, or `LEARNER`
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Account password (will be hashed)
+</ParamField>
+
+<ParamField body="parentId" type="string">
+  Required for LEARNER accounts - ID of the parent user
+</ParamField>
+
+### Response
+
+<ResponseField name="token" type="string">
+  JWT authentication token
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">
+      User ID
+    </ResponseField>
+    <ResponseField name="username" type="string">
+      Username
+    </ResponseField>
+    <ResponseField name="email" type="string">
+      Email address
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Full name
+    </ResponseField>
+    <ResponseField name="role" type="string">
+      User role (ADMIN, PARENT, or LEARNER)
+    </ResponseField>
+    <ResponseField name="parentId" type="number | null">
+      Parent user ID (for learners)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json Response Example
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 1,
+    "username": "john_parent",
+    "email": "john@example.com",
+    "name": "John Doe",
+    "role": "PARENT",
+    "parentId": null
+  }
+}
+```
+
+### Error Codes
+
+- **400** - Missing required fields or invalid role
+- **400** - Username already exists
+- **400** - Invalid parent user specified (code 23503)
+- **503** - Database connection failed
+
+---
+
+## Login
+
+```bash POST /login
+curl -X POST https://api.sunschool.xyz/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "john_parent",
+    "password": "securePassword123"
+  }'
+```
+
+<ParamField body="username" type="string" required>
+  Username for the account
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Account password
+</ParamField>
+
+### Response
+
+<ResponseField name="token" type="string">
+  JWT authentication token
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  User object (same structure as registration)
+</ResponseField>
+
+<ResponseField name="domain" type="string">
+  Domain information for client-side handling
+</ResponseField>
+
+```json Response Example
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 1,
+    "username": "john_parent",
+    "email": "john@example.com",
+    "name": "John Doe",
+    "role": "PARENT"
+  },
+  "domain": "sunschool.xyz"
+}
+```
+
+### Error Codes
+
+- **400** - Username and password are required
+- **401** - Invalid credentials
+- **500** - Authentication error
+
+---
+
+## Logout
+
+```bash POST /logout
+curl -X POST https://api.sunschool.xyz/logout \
+  -H "Authorization: Bearer {token}"
+```
+
+<Note>
+  This endpoint redirects to `/api/logout` with status 307.
+</Note>
+
+---
+
+## Get Current User
+
+```bash GET /user
+curl -X GET https://api.sunschool.xyz/user \
+  -H "Authorization: Bearer {token}"
+```
+
+<Note>
+  This endpoint redirects to `/api/user` with status 307.
+</Note>
+
+---
+
+## Health Check
+
+```bash GET /api/healthcheck
+curl -X GET https://api.sunschool.xyz/api/healthcheck
+```
+
+### Response
+
+```json
+{
+  "status": "ok",
+  "message": "Server is running"
+}
+```

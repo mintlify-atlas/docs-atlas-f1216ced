@@ -1,0 +1,505 @@
+---
+title: Points and Rewards
+description: Earning points, point sources, browsing rewards catalog, and redeeming rewards
+icon: coins
+---
+
+## Points System Overview
+
+Learners earn **points** (also called "tokens") by completing lessons and quizzes. Points can be saved toward **reward goals** set by their parents, creating a motivating incentive system.
+
+## Earning Points
+
+Points are awarded automatically when learners demonstrate learning progress.
+
+### Point Sources
+
+<AccordionGroup>
+  <Accordion title="QUIZ_CORRECT - Answering Quiz Questions">
+    The primary way to earn points is by answering quiz questions correctly.
+    
+    **Base Rate**: 1 point per correct answer
+    
+    ```typescript
+    // From points-service.ts:3-8
+    export type PointsSource =
+      | "QUIZ_CORRECT"
+      | "LESSON_COMPLETE"
+      | "ACHIEVEMENT"
+      | "REDEMPTION"
+      | "ADMIN_ADJUST";
+    ```
+    
+    **Example**: A 5-question quiz where you get 4 correct = 4 points
+  </Accordion>
+
+  <Accordion title="LESSON_COMPLETE - Finishing Lessons">
+    Additional points awarded for completing entire lessons.
+    
+    **Purpose**: Rewards sustained engagement, not just quiz performance
+    
+    **Typical Award**: Bonus points on top of quiz performance
+  </Accordion>
+
+  <Accordion title="ACHIEVEMENT - Unlocking Badges">
+    Some achievements come with point bonuses.
+    
+    **Examples**:
+    - First lesson completed: Bonus points
+    - Perfect quiz score: Extra points
+    - Milestone achievements: Point rewards
+  </Accordion>
+
+  <Accordion title="ADMIN_ADJUST - Manual Adjustments">
+    Parents or admins can manually award or deduct points.
+    
+    **Use Cases**:
+    - Rewarding offline learning
+    - Correcting errors
+    - Special bonuses for exceptional effort
+  </Accordion>
+</AccordionGroup>
+
+## Points Service Architecture
+
+The `points-service.ts` manages all point transactions:
+
+```typescript
+// From points-service.ts:10-16
+export interface AwardPointsOptions {
+  learnerId: number | string;
+  amount: number; // positive integer
+  sourceType: PointsSource;
+  sourceId?: string;
+  description: string;
+}
+```
+
+### Awarding Points
+
+```typescript
+// From points-service.ts:18-60
+class PointsService {
+  async awardPoints(opts: AwardPointsOptions): Promise<{ newBalance: number }> {
+    if (opts.amount <= 0) throw new Error("Amount must be positive");
+
+    // Start transaction
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Insert ledger entry
+      const insertLedgerSQL = `
+        INSERT INTO points_ledger (learner_id, amount, source_type, source_id, description)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id`;
+      await client.query(insertLedgerSQL, [
+        opts.learnerId,
+        opts.amount,
+        opts.sourceType,
+        opts.sourceId || null,
+        opts.description,
+      ]);
+
+      // Upsert learner_points row and update balances
+      const upsertSQL = `
+        INSERT INTO learner_points (learner_id, current_balance, total_earned, total_redeemed)
+        VALUES ($1, $2, $2, 0)
+        ON CONFLICT (learner_id)
+        DO UPDATE SET 
+          current_balance = learner_points.current_balance + EXCLUDED.current_balance,
+          total_earned = learner_points.total_earned + EXCLUDED.current_balance,
+          last_updated = NOW()
+        RETURNING current_balance`;
+      const { rows } = await client.query(upsertSQL, [opts.learnerId, opts.amount]);
+
+      await client.query("COMMIT");
+      return { newBalance: rows[0].current_balance };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+```
+
+<Info>
+**Transaction Safety**: All point awards use database transactions to ensure consistency. If any part fails, the entire operation rolls back.
+</Info>
+
+### Getting Balance
+
+```typescript
+// From points-service.ts:62-66
+async getBalance(learnerId: number | string): Promise<number> {
+  const sql = `SELECT current_balance FROM learner_points WHERE learner_id = $1`;
+  const { rows } = await pool.query(sql, [learnerId]);
+  return rows.length ? Number(rows[0].current_balance) : 0;
+}
+```
+
+### Points History
+
+```typescript
+// From points-service.ts:68-72
+async getHistory(learnerId: number | string, limit = 50) {
+  const sql = `SELECT * FROM points_ledger WHERE learner_id = $1 ORDER BY created_at DESC LIMIT $2`;
+  const { rows } = await pool.query(sql, [learnerId, limit]);
+  return rows;
+}
+```
+
+## Browsing Rewards Catalog
+
+Parents create rewards that learners can work toward.
+
+### Viewing Available Rewards
+
+```typescript
+// From rewards-service.ts:236-265
+export async function getRewardsForLearner(learnerId: number) {
+  // Find parent of learner
+  const { rows: userRows } = await pool.query(
+    `SELECT parent_id FROM users WHERE id=$1`,
+    [learnerId]
+  );
+  if (!userRows[0]?.parent_id) return [];
+
+  const parentId = userRows[0].parent_id;
+
+  const { rows } = await pool.query(
+    `SELECT r.*,
+       COALESCE(gs.saved_points, 0) AS saved_points,
+       gs.id AS savings_id
+     FROM rewards r
+     LEFT JOIN reward_goal_savings gs
+       ON gs.reward_id = r.id AND gs.learner_id = $1
+     WHERE r.parent_id = $2 AND r.is_active = TRUE
+     ORDER BY r.token_cost ASC, r.title ASC`,
+    [learnerId, parentId]
+  );
+
+  return rows.map(row => ({
+    ...toReward(row),
+    savedPoints: row.saved_points ?? 0,
+    savingsId: row.savings_id ?? null,
+  }));
+}
+```
+
+### Reward Structure
+
+```typescript
+// From learner-goals-page.tsx:13-24
+interface RewardGoal {
+  id: string;
+  title: string;
+  description: string | null;
+  tokenCost: number;
+  category: string;
+  isActive: boolean;
+  imageEmoji: string;
+  color: string;
+  savedPoints: number;
+  hasPendingRedemption?: boolean;
+}
+```
+
+### Goals Page Display
+
+```typescript
+// From learner-goals-page.tsx:239-265
+<SafeAreaView style={styles.container}>
+  {/* Header */}
+  <View style={styles.header}>
+    <Gift size={20} color={theme.colors.primary} />
+    <Text style={styles.headerTitle}>My Goals</Text>
+    <View style={styles.balanceBadge}>
+      <Text style={styles.balanceText}>⭐ {balance} pts</Text>
+    </View>
+  </View>
+
+  {/* Tabs */}
+  <View style={styles.tabs}>
+    {(['goals', 'history'] as const).map(t => (
+      <TouchableOpacity key={t} style={styles.tab} onPress={() => setTab(t)}>
+        <Text style={styles.tabText}>
+          {t === 'goals' ? '🎯 Goals' : '📜 History'}
+        </Text>
+      </TouchableOpacity>
+    ))}
+  </View>
+```
+
+<Tabs>
+  <Tab title="Goals Tab">
+    Shows all active reward goals with:
+    - Emoji icon and title
+    - Progress bar (saved / total needed)
+    - Percentage complete
+    - "Save Points" or "Cash Out!" buttons
+  </Tab>
+  
+  <Tab title="History Tab">
+    Displays past redemptions:
+    - Reward title and emoji
+    - Points spent
+    - Status (Pending/Approved/Rejected)
+    - Parent notes
+    - Request date
+  </Tab>
+</Tabs>
+
+## Point Delegation (Saving Toward Goals)
+
+Learners can move points from their general balance to specific reward goals.
+
+### Delegation Modal
+
+```typescript
+// From learner-goals-page.tsx:123-197
+const SavePointsModal: React.FC<{
+  goal: RewardGoal | null;
+  balance: number;
+  learnerId: number;
+  visible: boolean;
+  onClose: () => void;
+}> = ({ goal, balance, learnerId, visible, onClose }) => {
+  const [points, setPoints] = useState(0);
+
+  const saveMutation = useMutation({
+    mutationFn: (pts: number) =>
+      apiRequest('POST', `/api/rewards/${goal!.id}/save?learnerId=${learnerId}`, { points: pts })
+        .then(r => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/rewards'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/points/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/rewards-summary'] });
+      onClose();
+    },
+  });
+```
+
+### Preset Amounts
+
+```typescript
+// From learner-goals-page.tsx:142-166
+const saved2 = goal.savedPoints ?? 0;
+const remaining = Math.max(0, goal.tokenCost - saved2);
+const maxSave = Math.min(balance, remaining);
+const presets = [1, 5, 10, maxSave].filter((v, i, a) => v > 0 && a.indexOf(v) === i);
+
+// Preset buttons
+<View style={styles.presetRow}>
+  {presets.map(p => (
+    <TouchableOpacity key={p}
+      style={[styles.presetBtn, points === p && { backgroundColor: goal.color }]}
+      onPress={() => setPoints(p)}>
+      <Text style={styles.presetBtnText}>{p}</Text>
+    </TouchableOpacity>
+  ))}
+</View>
+
+// Custom amount with stepper
+<View style={styles.customRow}>
+  <TouchableOpacity onPress={() => setPoints(Math.max(0, points - 1))}>
+    <Text>−</Text>
+  </TouchableOpacity>
+  <Text style={styles.pointsDisplay}>{points}</Text>
+  <TouchableOpacity onPress={() => setPoints(Math.min(maxSave, points + 1))}>
+    <Text>+</Text>
+  </TouchableOpacity>
+</View>
+```
+
+### Backend Delegation
+
+```typescript
+// From rewards-service.ts:282-332
+export async function delegatePointsToGoal(
+  learnerId: number,
+  rewardId: string,
+  points: number
+) {
+  if (points <= 0) throw new Error('Points must be positive');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Check balance
+    const { rows: balRows } = await client.query(
+      `SELECT current_balance FROM learner_points WHERE learner_id=$1`,
+      [learnerId]
+    );
+    const balance = balRows[0]?.current_balance ?? 0;
+    if (balance < points) throw new Error('Insufficient balance');
+
+    // Deduct from learner_points
+    await client.query(
+      `UPDATE learner_points
+       SET current_balance = current_balance - $1, last_updated = NOW()
+       WHERE learner_id = $2`,
+      [points, learnerId]
+    );
+
+    // Record ledger entry
+    await client.query(
+      `INSERT INTO points_ledger (learner_id, amount, source_type, source_id, description)
+       VALUES ($1, $2, 'GOAL_DELEGATION', $3, 'Points saved toward reward goal')`,
+      [learnerId, -points, rewardId]
+    );
+
+    // Upsert goal savings
+    await client.query(
+      `INSERT INTO reward_goal_savings (learner_id, reward_id, saved_points)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (learner_id, reward_id)
+       DO UPDATE SET saved_points = reward_goal_savings.saved_points + $3, updated_at = NOW()`,
+      [learnerId, rewardId, points]
+    );
+
+    await client.query('COMMIT');
+  }
+```
+
+<Warning>
+**Important**: Delegated points are moved OUT of the general balance into goal-specific savings. They cannot be used for other goals unless the goal is deleted (which refunds points).
+</Warning>
+
+## Redeeming Rewards
+
+When a learner has saved enough points for a goal, they can request redemption.
+
+### Redemption Request
+
+```typescript
+// From learner-goals-page.tsx:99-104
+{isComplete && !goal.hasPendingRedemption && (
+  <TouchableOpacity
+    style={[styles.actionBtn, { backgroundColor: goal.color }]}
+    onPress={() => onRedeem(goal.id)}>
+    <Text style={styles.actionBtnText}>🎉 Cash Out!</Text>
+  </TouchableOpacity>
+)}
+```
+
+### Backend Process
+
+```typescript
+// From rewards-service.ts:338-371
+export async function requestRedemption(learnerId: number, rewardId: string) {
+  // Verify savings ≥ reward cost
+  const { rows: rewardRows } = await pool.query(
+    `SELECT token_cost FROM rewards WHERE id=$1 AND is_active=TRUE`,
+    [rewardId]
+  );
+  if (!rewardRows[0]) throw new Error('Reward not found');
+  const tokenCost = rewardRows[0].token_cost;
+
+  const { rows: savingsRows } = await pool.query(
+    `SELECT saved_points FROM reward_goal_savings WHERE learner_id=$1 AND reward_id=$2`,
+    [learnerId, rewardId]
+  );
+  const savedPoints = savingsRows[0]?.saved_points ?? 0;
+  if (savedPoints < tokenCost) {
+    throw new Error(`Need ${tokenCost} saved points, have ${savedPoints}`);
+  }
+
+  // Check for existing pending request
+  const { rows: existingRows } = await pool.query(
+    `SELECT id FROM reward_redemptions
+     WHERE learner_id=$1 AND reward_id=$2 AND status='PENDING'`,
+    [learnerId, rewardId]
+  );
+  if (existingRows[0]) throw new Error('Redemption already pending');
+
+  const { rows } = await pool.query(
+    `INSERT INTO reward_redemptions (learner_id, reward_id, tokens_spent, status)
+     VALUES ($1, $2, $3, 'PENDING')
+     RETURNING *`,
+    [learnerId, rewardId, tokenCost]
+  );
+  return toRedemption(rows[0]);
+}
+```
+
+### Redemption Statuses
+
+<Steps>
+  <Step title="PENDING">
+    **Initial State**: Request submitted, awaiting parent review
+    
+    Learner sees: "⏳ Waiting for parent approval…"
+  </Step>
+  
+  <Step title="APPROVED">
+    **Parent Approved**: Reward granted
+    
+    - Saved points reset to 0
+    - Learner can earn the same reward again
+    - Parent notes may be included
+  </Step>
+  
+  <Step title="REJECTED">
+    **Parent Denied**: Request declined
+    
+    - Saved points remain in goal
+    - Learner can try again later
+    - Parent can explain reason in notes
+  </Step>
+</Steps>
+
+## Redemption History
+
+```typescript
+// From learner-goals-page.tsx:292-327
+{tab === 'history' && (
+  <>
+    {redemptions.length === 0 ? (
+      <View style={styles.empty}>
+        <Text>📭</Text>
+        <Text style={styles.emptyTitle}>No history yet</Text>
+        <Text style={styles.emptyDesc}>
+          Cash out your first reward to see it here!
+        </Text>
+      </View>
+    ) : redemptions.map(r => (
+      <View key={r.id} style={styles.historyCard}>
+        <View style={styles.cardHeader}>
+          <Text>{r.rewardEmoji}</Text>
+          <View>
+            <Text style={styles.cardTitle}>{r.rewardTitle}</Text>
+            <Text style={styles.cardDesc}>
+              {r.tokensSpent} pts · {new Date(r.requestedAt).toLocaleDateString()}
+            </Text>
+          </View>
+          <View style={styles.statusBadge}>
+            <Text>{r.status === 'APPROVED' ? '✓ Approved' : 
+                      r.status === 'REJECTED' ? '✗ Rejected' : 
+                      '⏳ Pending'}</Text>
+          </View>
+        </View>
+        {r.parentNotes && (
+          <Text style={styles.cardDesc}>
+            Parent: {r.parentNotes}
+          </Text>
+        )}
+      </View>
+    ))}
+  </>
+)}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Learning Goals" icon="target" href="/learners/goals">
+    Understand how parents set up reward goals
+  </Card>
+  
+  <Card title="Achievements" icon="trophy" href="/learners/achievements">
+    See how achievements can award bonus points
+  </Card>
+</CardGroup>

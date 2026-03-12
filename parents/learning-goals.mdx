@@ -1,0 +1,522 @@
+---
+title: Learning Goals System
+description: How children save points and work toward reward goals
+---
+
+# Learning Goals System
+
+While parents create and manage rewards, children interact with them as **learning goals** they can work toward. This page explains the learner-facing goal system from a parent's perspective.
+
+## How Goals Work
+
+From the learner's perspective:
+
+1. **View available rewards** in the Goals page
+2. **Save points** toward rewards they want
+3. **Track progress** with visual progress bars
+4. **Cash out** when they have enough points saved
+5. **Wait for approval** from the parent
+
+From `learner-goals-page.tsx:201-265`:
+
+```typescript
+const LearnerGoalsPage: React.FC = () => {
+  const { selectedLearner } = useMode();
+  const learnerId = selectedLearner?.id ?? 0;
+  const [tab, setTab] = useState<'goals' | 'history'>('goals');
+  
+  const { data: goals = [] } = useQuery<RewardGoal[]>({
+    queryKey: ['/api/rewards', learnerId],
+    queryFn: () => apiRequest('GET', `/api/rewards?learnerId=${learnerId}`).then(r => r.data),
+    enabled: !!learnerId,
+  });
+  
+  const { data: balanceData } = useQuery({
+    queryKey: ['/api/points/balance', learnerId],
+    queryFn: () => apiRequest('GET', `/api/points/balance?learnerId=${learnerId}`).then(r => r.data),
+    enabled: !!learnerId,
+  });
+};
+```
+
+## The Learner Interface
+
+### Header with Balance
+
+From `learner-goals-page.tsx:242-252`:
+
+```typescript
+<View style={styles.header}>
+  <TouchableOpacity onPress={() => setLocation('/learner')}>
+    <ArrowLeft size={22} color={theme.colors.textPrimary} />
+  </TouchableOpacity>
+  <Gift size={20} color={theme.colors.primary} />
+  <Text style={styles.headerTitle}>My Goals</Text>
+  <View style={{ flex: 1 }} />
+  <View style={styles.balanceBadge}>
+    <Text style={styles.balanceText}>⭐ {balance} pts</Text>
+  </View>
+</View>
+```
+
+<Info>
+The balance shown includes only **available** points, not points already saved toward other goals.
+</Info>
+
+### Goal Cards
+
+Each goal displays comprehensive information:
+
+From `learner-goals-page.tsx:40-114`:
+
+```typescript
+const GoalCard: React.FC<{ goal: RewardGoal }> = ({ goal, learnerId, onSavePoints, onRedeem, isProcessing }) => {
+  const saved = goal.savedPoints ?? 0;
+  const pct = goal.tokenCost > 0 ? Math.min(100, Math.round((saved / goal.tokenCost) * 100)) : 0;
+  const isComplete = saved >= goal.tokenCost;
+
+  return (
+    <View style={[styles.card, { borderLeftColor: goal.color, borderLeftWidth: 5 }]}>
+      {/* Header with emoji and title */}
+      <View style={styles.cardHeader}>
+        <View style={[styles.emojiCircle, { backgroundColor: goal.color + '22' }]}>
+          <Text style={{ fontSize: 32 }}>{goal.imageEmoji}</Text>
+        </View>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.cardTitle}>{goal.title}</Text>
+          {goal.description && (
+            <Text style={styles.cardDesc}>{goal.description}</Text>
+          )}
+        </View>
+        {isComplete && !goal.hasPendingRedemption && (
+          <View style={[styles.readyBadge, { backgroundColor: goal.color }]}>
+            <Text style={styles.readyBadgeText}>Ready!</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Progress bar */}
+      <View style={styles.progressSection}>
+        <View style={styles.progressLabelRow}>
+          <Text style={styles.progressLabel}>
+            {saved} / {goal.tokenCost} pts saved
+          </Text>
+          <Text style={[styles.progressPct, { color: goal.color }]}>{pct}%</Text>
+        </View>
+        <View style={[styles.progressTrack, { backgroundColor: theme.colors.divider }]}>
+          <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: goal.color }]} />
+        </View>
+      </View>
+
+      {/* Action buttons */}
+      <View style={styles.cardActions}>
+        {!isComplete && !goal.hasPendingRedemption && (
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: goal.color + '20', borderColor: goal.color }]}
+            onPress={() => onSavePoints(goal.id)}
+          >
+            <Text style={[styles.actionBtnText, { color: goal.color }]}>💰 Save Points</Text>
+          </TouchableOpacity>
+        )}
+        {isComplete && !goal.hasPendingRedemption && (
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: goal.color }]}
+            onPress={() => onRedeem(goal.id)}
+          >
+            <Text style={[styles.actionBtnText, { color: '#fff' }]}>🎉 Cash Out!</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+};
+```
+
+## Saving Points
+
+### The Save Points Modal
+
+When a child clicks "Save Points", they see a modal to choose how many points to commit:
+
+From `learner-goals-page.tsx:116-197`:
+
+```typescript
+const SavePointsModal: React.FC<{ goal: RewardGoal | null; balance: number }> = ({
+  goal, balance, learnerId, visible, onClose
+}) => {
+  const [points, setPoints] = useState(0);
+
+  const saveMutation = useMutation({
+    mutationFn: (pts: number) =>
+      apiRequest('POST', `/api/rewards/${goal!.id}/save?learnerId=${learnerId}`, { points: pts })
+        .then(r => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/rewards'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/points/balance'] });
+      onClose();
+    },
+  });
+
+  if (!goal) return null;
+
+  const saved = goal.savedPoints ?? 0;
+  const remaining = Math.max(0, goal.tokenCost - saved);
+  const maxSave = Math.min(balance, remaining);
+  const presets = [1, 5, 10, maxSave].filter((v, i, a) => v > 0 && a.indexOf(v) === i);
+
+  return (
+    <Modal visible={visible} transparent onRequestClose={onClose}>
+      <View style={styles.modalBox}>
+        <Text style={styles.modalTitle}>
+          Save to {goal.imageEmoji} {goal.title}
+        </Text>
+        <Text style={styles.modalSub}>
+          Balance: {balance} pts · {remaining > 0 ? `Need ${remaining} more` : '✓ Goal reached!'}
+        </Text>
+
+        {/* Preset buttons */}
+        <View style={styles.presetRow}>
+          {presets.map(p => (
+            <TouchableOpacity key={p}
+              style={[styles.presetBtn, points === p && { backgroundColor: goal.color }]}
+              onPress={() => setPoints(p)}
+            >
+              <Text style={[styles.presetBtnText, points === p && { color: '#fff' }]}>{p}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Custom stepper */}
+        <View style={styles.customRow}>
+          <TouchableOpacity onPress={() => setPoints(Math.max(0, points - 1))}>
+            <Text>−</Text>
+          </TouchableOpacity>
+          <Text style={[styles.pointsDisplay, { color: goal.color }]}>{points}</Text>
+          <TouchableOpacity onPress={() => setPoints(Math.min(maxSave, points + 1))}>
+            <Text>+</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.modalBtn, { backgroundColor: goal.color }]}
+          onPress={() => saveMutation.mutate(points)}
+          disabled={points <= 0}
+        >
+          <Text>Save {points} pts</Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+};
+```
+
+### How Point Saving Works
+
+<Steps>
+  <Step title="Child Selects Amount">
+    Uses preset buttons (1, 5, 10, or max) or custom stepper
+    
+    The maximum they can save is:
+    ```typescript
+    const maxSave = Math.min(balance, remaining);
+    ```
+    
+    Whichever is less: available balance or points still needed
+  </Step>
+  
+  <Step title="Points Transfer">
+    When they click "Save":
+    1. Points deducted from available balance
+    2. Points added to saved total for that reward
+    3. Progress bar updates immediately
+    4. Balance badge updates
+  </Step>
+  
+  <Step title="Working Toward Goal">
+    Child continues earning and saving until:
+    ```typescript
+    const isComplete = saved >= goal.tokenCost;
+    ```
+    
+    When complete, the "Cash Out" button appears
+  </Step>
+</Steps>
+
+<Info>
+Points saved toward a goal are **locked** to that goal. Children can't use them elsewhere unless the parent deletes the reward (which refunds the points) or they redeem it.
+</Info>
+
+## Cashing Out (Redemption)
+
+When a child has enough points saved:
+
+From `learner-goals-page.tsx:227-234`:
+
+```typescript
+const redeemMutation = useMutation({
+  mutationFn: (rewardId: string) =>
+    apiRequest('POST', `/api/rewards/${rewardId}/redeem?learnerId=${learnerId}`).then(r => r.data),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/rewards', learnerId] });
+    queryClient.invalidateQueries({ queryKey: ['/api/redemptions/my', learnerId] });
+  },
+});
+```
+
+<Steps>
+  <Step title="Click Cash Out">
+    The child clicks the "🎉 Cash Out!" button on the goal card
+  </Step>
+  
+  <Step title="Create Redemption Request">
+    System creates a redemption with status PENDING
+  </Step>
+  
+  <Step title="Wait for Parent">
+    The goal card shows:
+    ```typescript
+    {goal.hasPendingRedemption && (
+      <View style={styles.readyBadge}>
+        <Text>Waiting…</Text>
+      </View>
+    )}
+    ```
+    
+    And a message:
+    ```typescript
+    <Text>⏳ Waiting for parent approval…</Text>
+    ```
+  </Step>
+  
+  <Step title="Parent Approves/Rejects">
+    From the parent Rewards page, you can:
+    - **Approve** - Points are spent, child receives reward
+    - **Reject** - Points refunded to available balance
+  </Step>
+</Steps>
+
+## Redemption History
+
+Children can view their past redemptions in the History tab:
+
+From `learner-goals-page.tsx:292-328`:
+
+```typescript
+{tab === 'history' && (
+  <>
+    {redemptions.length === 0 ? (
+      <View style={styles.empty}>
+        <Text style={{ fontSize: 52 }}>📭</Text>
+        <Text style={styles.emptyTitle}>No history yet</Text>
+        <Text style={styles.emptyDesc}>
+          Cash out your first reward to see it here!
+        </Text>
+      </View>
+    ) : redemptions.map(r => (
+      <View key={r.id} style={[styles.historyCard, { borderLeftColor: r.rewardColor }]}>
+        <View style={styles.cardHeader}>
+          <Text style={{ fontSize: 28 }}>{r.rewardEmoji}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{r.rewardTitle}</Text>
+            <Text style={styles.cardDesc}>
+              {r.tokensSpent} pts · {new Date(r.requestedAt).toLocaleDateString()}
+            </Text>
+          </View>
+          <View style={[styles.statusBadge, {
+            backgroundColor: r.status === 'APPROVED' ? '#E8F5E9' :
+                              r.status === 'REJECTED' ? '#FFEBEE' : '#FFF8E1'
+          }]}>
+            <Text>
+              {r.status === 'APPROVED' ? '✓ Approved' :
+               r.status === 'REJECTED' ? '✗ Rejected' : '⏳ Pending'}
+            </Text>
+          </View>
+        </View>
+        {r.parentNotes && (
+          <Text style={styles.cardDesc}>
+            Parent: {r.parentNotes}
+          </Text>
+        )}
+      </View>
+    ))}
+  </>
+)}
+```
+
+## Parent Notes
+
+When approving or rejecting redemptions, parents can include notes that children see in their history:
+
+```typescript
+{r.parentNotes && (
+  <Text>Parent: {r.parentNotes}</Text>
+)}
+```
+
+Example notes:
+- "Great job! We'll go this weekend."
+- "Let's wait until after your homework is done."
+- "Pick which game you want and we'll get it."
+
+## Understanding the Two-Balance System
+
+Sunschool uses two separate point balances:
+
+<CardGroup cols={2}>
+  <Card title="Available Balance" icon="coins">
+    Points the child can spend freely:
+    - Save toward any goal
+    - Use for other features
+    - Shown in the header badge
+  </Card>
+  
+  <Card title="Saved (Locked) Points" icon="lock">
+    Points committed to specific goals:
+    - Locked to that reward
+    - Count toward goal progress
+    - Can't be used elsewhere
+  </Card>
+</CardGroup>
+
+From the API:
+
+```typescript
+// Total points earned
+const totalPoints = /* sum of all point transactions */;
+
+// Points saved toward goals
+const savedPoints = /* sum of points saved to rewards */;
+
+// Available balance
+const balance = totalPoints - savedPoints;
+```
+
+## Goal States
+
+Goals progress through several states:
+
+<Steps>
+  <Step title="In Progress">
+    ```typescript
+    !isComplete && !hasPendingRedemption
+    ```
+    
+    Shows "💰 Save Points" button
+  </Step>
+  
+  <Step title="Complete">
+    ```typescript
+    isComplete && !hasPendingRedemption
+    ```
+    
+    Shows "🎉 Cash Out!" button with "Ready!" badge
+  </Step>
+  
+  <Step title="Pending Approval">
+    ```typescript
+    hasPendingRedemption
+    ```
+    
+    Shows "Waiting…" badge and waiting message
+  </Step>
+  
+  <Step title="Approved">
+    Appears in history as approved, points spent
+  </Step>
+  
+  <Step title="Rejected">
+    Points refunded, goal returns to previous state
+  </Step>
+</Steps>
+
+## Empty States
+
+If no goals are available:
+
+From `learner-goals-page.tsx:272-278`:
+
+```typescript
+{goals.length === 0 ? (
+  <View style={styles.empty}>
+    <Text style={{ fontSize: 52 }}>🎁</Text>
+    <Text style={styles.emptyTitle}>No goals yet!</Text>
+    <Text style={styles.emptyDesc}>
+      Ask your parent to add some rewards for you to earn.
+    </Text>
+  </View>
+) : (
+  // Show goal cards
+)}
+```
+
+## Best Practices for Parents
+
+<AccordionGroup>
+  <Accordion title="Make goals achievable">
+    Ensure point costs are reasonable for your child's engagement level. A child who earns 5-10 points per day shouldn't face 500-point goals.
+  </Accordion>
+  
+  <Accordion title="Approve promptly">
+    When children request redemptions, respond within a day or two. This keeps them motivated and trusting the system.
+  </Accordion>
+  
+  <Accordion title="Use encouraging notes">
+    Even when rejecting (rare cases), include a kind explanation:
+    - "Let's save this for after your test"
+    - "Great saving! Let's do this on the weekend"
+  </Accordion>
+  
+  <Accordion title="Watch the progress tracking">
+    Use the learner progress feature on reward cards to see what motivates each child. Some might focus on one big goal, others spread points across many.
+  </Accordion>
+  
+  <Accordion title="Celebrate milestones">
+    When a child reaches 50% or 75% toward a goal, acknowledge their progress. This builds momentum.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Child says points disappeared">
+    Check if they:
+    1. Saved points toward a goal (shows in progress bar)
+    2. Had a redemption approved (spent the points)
+    3. Tried to save more than available (would fail silently)
+  </Accordion>
+  
+  <Accordion title="Can't cash out despite having enough">
+    Verify:
+    1. Points are in "saved" balance, not available
+    2. The goal isn't inactive
+    3. There isn't already a pending redemption
+    4. Page has been refreshed
+  </Accordion>
+  
+  <Accordion title="Goal doesn't show progress">
+    Ensure:
+    1. Points were actually saved (check available balance decreased)
+    2. The save mutation succeeded (no errors)
+    3. Page was refreshed after saving
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Manage Rewards" icon="gift" href="/parents/rewards-system">
+    Learn about the parent rewards interface
+  </Card>
+  
+  <Card title="Track Progress" icon="chart-line" href="/parents/progress-tracking">
+    Monitor points earned through learning
+  </Card>
+  
+  <Card title="View Dashboard" icon="gauge" href="/parents/dashboard">
+    Return to the main parent view
+  </Card>
+  
+  <Card title="Export Data" icon="download" href="/parents/data-export">
+    Download goal and redemption history
+  </Card>
+</CardGroup>

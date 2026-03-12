@@ -1,0 +1,429 @@
+---
+title: 'Rewards'
+description: 'Manage reward catalog and savings goals'
+icon: 'gift'
+---
+
+## Get Rewards
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/rewards
+curl -X GET https://api.sunschool.xyz/api/rewards?learnerId=3 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="learnerId" type="number">
+  Learner ID to get rewards for (shows progress for that learner)
+</ParamField>
+
+### Behavior by Role
+
+- **LEARNER**: Returns their parent's reward catalog with their own savings progress
+- **PARENT/ADMIN**: Returns their own reward catalog (or filtered by learnerId)
+
+### Response
+
+```json Response Example
+[
+  {
+    "id": "reward_123",
+    "parentId": 1,
+    "title": "Extra Recess",
+    "description": "15 minutes of extra free time",
+    "tokenCost": 10,
+    "category": "Time",
+    "imageEmoji": "🏃",
+    "color": "#4CAF50",
+    "isActive": true,
+    "maxRedemptions": null,
+    "currentRedemptions": 0,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "savedPoints": 5
+  }
+]
+```
+
+<ResponseField name="savedPoints" type="number">
+  Points saved toward this goal by the learner (only included when learnerId is provided)
+</ResponseField>
+
+---
+
+## Create Reward
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash POST /api/rewards
+curl -X POST https://api.sunschool.xyz/api/rewards \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Movie Night",
+    "description": "Pick a movie for family night",
+    "tokenCost": 25,
+    "category": "Entertainment",
+    "imageEmoji": "🎬",
+    "color": "#2196F3"
+  }'
+```
+
+<ParamField body="title" type="string" required>
+  Reward title
+</ParamField>
+
+<ParamField body="tokenCost" type="number" required>
+  Cost in points to redeem this reward
+</ParamField>
+
+<ParamField body="description" type="string">
+  Reward description
+</ParamField>
+
+<ParamField body="category" type="string">
+  Reward category (e.g., "Time", "Entertainment", "Activities")
+</ParamField>
+
+<ParamField body="maxRedemptions" type="number">
+  Maximum number of times this reward can be redeemed (null for unlimited)
+</ParamField>
+
+<ParamField body="imageEmoji" type="string">
+  Emoji to display for this reward
+</ParamField>
+
+<ParamField body="color" type="string">
+  Hex color code for the reward card
+</ParamField>
+
+### Response
+
+Returns the created reward object.
+
+### Error Codes
+
+- **400** - title and tokenCost are required
+- **401** - Unauthorized
+- **403** - Forbidden (not a parent/admin)
+
+---
+
+## Update Reward
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash PUT /api/rewards/:rewardId
+curl -X PUT https://api.sunschool.xyz/api/rewards/reward_123 \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tokenCost": 30,
+    "isActive": true
+  }'
+```
+
+<ParamField path="rewardId" type="string" required>
+  Reward ID to update
+</ParamField>
+
+Accepts any of the fields from Create Reward, plus:
+
+<ParamField body="isActive" type="boolean">
+  Whether the reward is active and available for redemption
+</ParamField>
+
+### Response
+
+Returns the updated reward object.
+
+### Error Codes
+
+- **401** - Unauthorized
+- **403** - Forbidden (can only update your own rewards)
+- **404** - Reward not found
+
+---
+
+## Delete Reward
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash DELETE /api/rewards/:rewardId
+curl -X DELETE https://api.sunschool.xyz/api/rewards/reward_123 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="rewardId" type="string" required>
+  Reward ID to delete
+</ParamField>
+
+### Response
+
+```json
+{
+  "success": true
+}
+```
+
+### Error Codes
+
+- **401** - Unauthorized
+- **403** - Forbidden
+
+---
+
+## Save Points Toward Goal
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash POST /api/rewards/:rewardId/save
+curl -X POST https://api.sunschool.xyz/api/rewards/reward_123/save \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "points": 5
+  }'
+```
+
+<ParamField path="rewardId" type="string" required>
+  Reward ID to save points toward
+</ParamField>
+
+<ParamField body="points" type="number" required>
+  Number of points to allocate to this goal (must be positive)
+</ParamField>
+
+<ParamField query="learnerId" type="number">
+  Learner ID (for parent use)
+</ParamField>
+
+<Warning>
+  This action deducts points from the learner's balance and adds them to the savings goal for this specific reward.
+</Warning>
+
+### Response
+
+```json
+{
+  "success": true,
+  "pointsDelegated": 5
+}
+```
+
+### Error Codes
+
+- **400** - points must be positive
+- **401** - Unauthorized
+- **500** - Insufficient balance
+
+---
+
+## Request Redemption
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash POST /api/rewards/:rewardId/redeem
+curl -X POST https://api.sunschool.xyz/api/rewards/reward_123/redeem \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="rewardId" type="string" required>
+  Reward ID to redeem
+</ParamField>
+
+<ParamField query="learnerId" type="number">
+  Learner ID (for parent use)
+</ParamField>
+
+<Note>
+  The learner must have saved enough points toward this goal to cover the full cost. The redemption request will be pending until a parent approves it.
+</Note>
+
+### Response
+
+```json Response Example
+{
+  "id": "redemption_456",
+  "learnerId": 3,
+  "rewardId": "reward_123",
+  "pointsUsed": 10,
+  "status": "PENDING",
+  "requestedAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Error Codes
+
+- **400** - Insufficient points saved for this goal
+- **400** - Reward is not active
+- **400** - Max redemptions reached
+- **401** - Unauthorized
+
+---
+
+## Get Redemptions (Parent)
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash GET /api/redemptions
+curl -X GET https://api.sunschool.xyz/api/redemptions?status=PENDING \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="status" type="string">
+  Filter by status: `PENDING`, `APPROVED`, or `REJECTED`
+</ParamField>
+
+Returns redemption requests for the parent's children.
+
+### Response
+
+```json Response Example
+[
+  {
+    "id": "redemption_456",
+    "learnerId": 3,
+    "learnerName": "Alice",
+    "rewardId": "reward_123",
+    "rewardTitle": "Extra Recess",
+    "pointsUsed": 10,
+    "status": "PENDING",
+    "requestedAt": "2024-01-15T10:30:00.000Z"
+  }
+]
+```
+
+---
+
+## Get My Redemptions (Learner)
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/redemptions/my
+curl -X GET https://api.sunschool.xyz/api/redemptions/my \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="learnerId" type="number">
+  Learner ID (for parent use)
+</ParamField>
+
+Returns redemption requests for the authenticated learner (or specified learner if parent).
+
+---
+
+## Approve Redemption
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash PUT /api/redemptions/:redemptionId/approve
+curl -X PUT https://api.sunschool.xyz/api/redemptions/redemption_456/approve \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "notes": "Great job this week!"
+  }'
+```
+
+<ParamField path="redemptionId" type="string" required>
+  Redemption ID to approve
+</ParamField>
+
+<ParamField body="notes" type="string">
+  Optional notes for the learner
+</ParamField>
+
+### Response
+
+Returns the updated redemption object with status "APPROVED".
+
+---
+
+## Reject Redemption
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash PUT /api/redemptions/:redemptionId/reject
+curl -X PUT https://api.sunschool.xyz/api/redemptions/redemption_456/reject \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "notes": "Let's wait until after your homework is done."
+  }'
+```
+
+<ParamField path="redemptionId" type="string" required>
+  Redemption ID to reject
+</ParamField>
+
+<ParamField body="notes" type="string">
+  Optional notes for the learner
+</ParamField>
+
+<Warning>
+  Rejecting a redemption returns the saved points back to the savings goal, so the learner can try again later.
+</Warning>
+
+### Response
+
+Returns the updated redemption object with status "REJECTED".
+
+---
+
+## Get Reward Summary
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/rewards-summary
+curl -X GET https://api.sunschool.xyz/api/rewards-summary?learnerId=3 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="learnerId" type="number">
+  Learner ID (defaults to authenticated user)
+</ParamField>
+
+Returns a comprehensive summary of rewards, savings, and redemptions for a learner.
+
+### Response
+
+```json Response Example
+{
+  "totalPointsSaved": 35,
+  "availableBalance": 42,
+  "goalsInProgress": 3,
+  "totalRedeemed": 5,
+  "pendingRedemptions": 1,
+  "goals": [
+    {
+      "rewardId": "reward_123",
+      "title": "Extra Recess",
+      "tokenCost": 10,
+      "savedPoints": 10,
+      "progress": 100
+    }
+  ]
+}
+```

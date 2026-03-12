@@ -1,0 +1,516 @@
+---
+title: Grade Level Support
+description: How Sunschool tailors content from kindergarten through high school
+icon: graduation-cap
+---
+
+## Overview
+
+Sunschool provides age-appropriate content for learners from kindergarten (age 5) through high school (age 18+). Each grade level has unique content constraints, vocabulary limits, and pedagogical approaches.
+
+## K-2 (Ages 5-7): Early Childhood
+
+### Learning Characteristics
+
+<CardGroup cols={2}>
+  <Card title="Vocabulary" icon="book-open">
+    About 2,000 simple words total
+  </Card>
+  <Card title="Reading Ability" icon="glasses">
+    Just learning to read
+  </Card>
+  <Card title="Attention Span" icon="clock">
+    5-10 minutes per activity
+  </Card>
+  <Card title="Thinking Style" icon="shapes">
+    Only concrete, observable concepts
+  </Card>
+</CardGroup>
+
+### Content Constraints
+
+```typescript
+// From server/prompts/grades/gradeK2.ts:8
+ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:
+- Maximum 5 words per sentence (count carefully!)
+- Maximum 75 words total for entire lesson
+- Only use words a kindergartner knows (mom, dad, cat, dog, hot, cold)
+- Only concrete things they can SEE, TOUCH, SMELL, TASTE, or HEAR
+- NO abstract concepts whatsoever
+```
+
+### Allowed Vocabulary
+
+<Tabs>
+  <Tab title="Nouns">
+    mom, dad, sun, moon, water, food, home, dog, cat, tree, flower, bird, fish, car, ball
+  </Tab>
+  <Tab title="Adjectives">
+    big, small, hot, cold, wet, dry, red, blue, green, yellow, happy, sad
+  </Tab>
+  <Tab title="Verbs">
+    is, has, go, run, walk, jump, play, eat, drink, see, look, hear, feel
+  </Tab>
+  <Tab title="Numbers">
+    one, two, three, four, five (written as: 1, 2, 3, 4, 5)
+  </Tab>
+</Tabs>
+
+### Banned Words
+
+<Warning>
+The following words are **strictly prohibited** for K-2:
+process, system, adapt, environment, organism, function, structure, cycle, energy, nutrient, habitat, ecosystem, photosynthesis, cells, molecules, chemical, reaction, evolution, species, analyze, investigate, relationship, comparison, characteristic, property, complex, various, numerous, significant, essential, important, therefore, however, although, because
+</Warning>
+
+### Quiz Questions
+
+Questions must be extremely simple:
+
+<CodeGroup>
+```text Good Examples
+"Is the sun hot?"
+Options: ["Yes", "No", "Maybe", "I don't know"]
+
+"How many legs?"
+Options: ["1", "2", "3", "4"]
+
+"Is water wet?"
+Options: ["Yes", "No", "Sometimes", "Never"]
+```
+
+```text Bad Examples
+❌ "What is the relationship between the sun and plants?"
+   (Too many words, abstract concept)
+
+❌ "How do animals adapt to their environment?"
+   (Words "adapt" and "environment" too advanced)
+```
+</CodeGroup>
+
+### Math Notation
+
+```text
+// From server/prompts/grades/gradeK2.ts:203
+- Count to 20 only
+- Simple addition: 2 + 3 = __
+- No subtraction beyond 10
+- Use objects: 🍎🍎 + 🍎 = __
+- Show fingers for counting
+```
+
+---
+
+## Grade 3-4 (Ages 8-10): Developing Readers
+
+### Learning Characteristics
+
+<CardGroup cols={2}>
+  <Card title="Vocabulary" icon="book-open">
+    4,000-6,000 words
+  </Card>
+  <Card title="Reading Speed" icon="gauge">
+    100-150 words per minute
+  </Card>
+  <Card title="Comprehension" icon="lightbulb">
+    Understanding cause and effect
+  </Card>
+  <Card title="Instructions" icon="list-check">
+    Can follow 2-3 step instructions
+  </Card>
+</CardGroup>
+
+### Content Constraints
+
+```typescript
+// From server/prompts/grades/grade34.ts:8
+STRICT REQUIREMENTS:
+- Maximum 8 words per sentence (count carefully!)
+- Maximum 200 words total for entire lesson
+- Use grade 3-4 vocabulary ONLY (no high school or college words)
+- Introduce ONE new concept at a time
+- Connect to experiences familiar to 8-10 year olds
+- Use concrete examples they can visualize
+```
+
+### Appropriate Vocabulary
+
+<Tabs>
+  <Tab title="Science">
+    animals, plants, water, air, heat, light, grow, change, measure
+  </Tab>
+  <Tab title="Math">
+    add, subtract, multiply, divide, fraction, equal, pattern, shape
+  </Tab>
+  <Tab title="Descriptive">
+    hot/cold, fast/slow, heavy/light, rough/smooth, living/non-living
+  </Tab>
+</Tabs>
+
+### Banned Words
+
+```text
+molecular, cellular, genetic, heredity, chromosomes, proteins,
+enzymes, metabolism, symbiosis, photosynthesis, respiration,
+mitosis, polynomial, quadratic, exponential, logarithm, 
+derivative, integral, theorem, hypothesis, subsequently,
+furthermore, nevertheless, consequently, complexity
+```
+
+### Math Notation
+
+```text
+// From server/prompts/grades/grade34.ts:196
+- Multiplication: 7 × 8 = __
+- Division: 56 ÷ 7 = __
+- Fractions: 1/2, 1/4, 3/4
+- Word problems with 2 steps
+- Numbers up to 10,000
+```
+
+---
+
+## Grade 5-6 (Ages 10-12): Abstract Thinkers
+
+### Learning Characteristics
+
+<CardGroup cols={2}>
+  <Card title="Vocabulary" icon="book-open">
+    10,000+ words
+  </Card>
+  <Card title="Reading Speed" icon="gauge">
+    150-200 words per minute
+  </Card>
+  <Card title="Thinking" icon="brain">
+    Can think abstractly
+  </Card>
+  <Card title="Processes" icon="workflow">
+    Follow multi-step processes
+  </Card>
+</CardGroup>
+
+### Content Constraints
+
+```typescript
+// From server/prompts/grades/grade56.ts:8
+REQUIREMENTS:
+- Maximum 12 words per sentence average
+- Maximum 400 words total
+- Introduce academic vocabulary with context
+- Build conceptual understanding
+- Include cause-effect relationships
+```
+
+### Question Distribution
+
+```typescript
+// From server/prompts/grades/grade56.ts:58
+- Factual knowledge (20%): "What is...", "Which one..."
+- Conceptual understanding (40%): "How does...", "Why is..."
+- Application skills (40%): "How would you...", "What happens if..."
+```
+
+### Math Notation
+
+```text
+// From server/prompts/grades/grade56.ts:171
+- Decimals: 3.45 × 2.1 = __
+- Fractions: 3/4 + 2/3 = __
+- Percentages: 15% of 80 = __
+- Basic algebra: 3x + 5 = 20
+- Area and volume formulas
+- Ratios: 3:5 = 12:__
+```
+
+---
+
+## Grade 7-8 (Ages 12-14): Critical Thinkers
+
+### Learning Characteristics
+
+<CardGroup cols={2}>
+  <Card title="Vocabulary" icon="book-open">
+    50,000+ words
+  </Card>
+  <Card title="Reading Speed" icon="gauge">
+    200-250 words per minute
+  </Card>
+  <Card title="Analysis" icon="magnifying-glass">
+    Analyze multiple viewpoints
+  </Card>
+  <Card title="Synthesis" icon="puzzle-piece">
+    Synthesize information
+  </Card>
+</CardGroup>
+
+### Content Constraints
+
+```typescript
+// From server/prompts/grades/grade78.ts:8
+REQUIREMENTS:
+- Complex sentence structures acceptable
+- Maximum 700 words total
+- Use subject-specific terminology
+- Develop multi-step reasoning
+- Include interdisciplinary connections
+```
+
+### Assessment Distribution
+
+```typescript
+// From server/prompts/grades/grade78.ts:52
+Question distribution:
+- Knowledge/Recall: 15%
+- Comprehension: 25%
+- Application: 25%
+- Analysis: 20%
+- Evaluation: 15%
+```
+
+### Math Notation
+
+```text
+// From server/prompts/grades/grade78.ts:134
+- Linear equations: 2x + 3y = 12
+- Systems: Solve for x and y
+- Exponents: 3² × 3⁴ = 3ⁿ
+- Pythagorean theorem: a² + b² = c²
+- Functions: f(x) = 2x + 5
+- Inequalities: 3x - 7 < 14
+- Slope: m = (y₂-y₁)/(x₂-x₁)
+```
+
+---
+
+## Grade 9+ (Ages 14+): Advanced Learning
+
+### Learning Characteristics
+
+<CardGroup cols={2}>
+  <Card title="Vocabulary" icon="book-open">
+    College-level vocabulary
+  </Card>
+  <Card title="Reading Speed" icon="gauge">
+    250+ words per minute
+  </Card>
+  <Card title="Research" icon="microscope">
+    Understand research papers
+  </Card>
+  <Card title="Insights" icon="lightbulb">
+    Generate original insights
+  </Card>
+</CardGroup>
+
+### Content Constraints
+
+```typescript
+// From server/prompts/grades/grade9Plus.ts:8
+REQUIREMENTS:
+- No sentence structure limitations
+- 1000-2000 words as appropriate
+- Full technical vocabulary expected
+- Complex theoretical frameworks
+- Research-level thinking
+```
+
+### Lesson Structure
+
+```text
+// From server/prompts/grades/grade9Plus.ts:20
+STRUCTURE (1000-2000 words):
+
+Abstract and Objectives (150 words)
+Theoretical framework and learning goals.
+
+Literature Review (400 words)
+Current understanding and research context.
+
+Core Content (600 words)
+Detailed technical explanation with proofs/evidence.
+
+Applications and Implications (300 words)
+Real-world applications and future directions.
+
+Problem Set (150 words)
+Challenging problems requiring synthesis.
+```
+
+### Math Notation
+
+```text
+// From server/prompts/grades/grade9Plus.ts:141
+- Calculus: d/dx[f(x)], ∫f(x)dx
+- Trigonometry: sin²θ + cos²θ = 1
+- Logarithms: log₂(8) = 3
+- Matrices: [A][B] = [C]
+- Complex numbers: z = a + bi
+- Limits: lim(x→∞) f(x)
+- Vectors: a⃗ · b⃗ = |a||b|cosθ
+- Statistics: σ² = Σ(x-μ)²/n
+```
+
+---
+
+## Visual Complexity by Grade
+
+Each grade level has different visual design requirements:
+
+<Tabs>
+  <Tab title="K-2">
+    ```text
+    SVG ILLUSTRATION CONSTRAINTS:
+    - Maximum 5 shapes total
+    - Primary colors only: red, blue, yellow, green
+    - Large shapes (minimum 40px radius)
+    - One-word labels only, 18px+ font
+    - Simple, friendly, recognizable objects
+    - viewBox="0 0 400 300"
+    ```
+  </Tab>
+  <Tab title="3-4">
+    ```text
+    SVG ILLUSTRATION GUIDELINES:
+    - 5-8 elements/shapes
+    - Clear, readable labels (1-2 words), 14px+ font
+    - Friendly color palette with contrast
+    - Show parts and wholes
+    - Simple arrows to connect items
+    - viewBox="0 0 500 350"
+    ```
+  </Tab>
+  <Tab title="5-6">
+    ```text
+    SVG ILLUSTRATION GUIDELINES:
+    - 8-12 elements/shapes
+    - Arrows showing relationships
+    - Labels with brief descriptions (2-4 words), 12px+ font
+    - Show cause-and-effect or process steps
+    - Professional color scheme
+    - viewBox="0 0 600 400"
+    ```
+  </Tab>
+  <Tab title="7-8">
+    ```text
+    SVG ILLUSTRATION GUIDELINES:
+    - 12-20 elements
+    - Annotations and callout labels
+    - Quantitative relationships and data
+    - Scientific/academic styling
+    - Font 11px+ for labels, 14px+ for titles
+    - viewBox="0 0 700 500"
+    ```
+  </Tab>
+  <Tab title="9+">
+    ```text
+    SVG ILLUSTRATION GUIDELINES:
+    - 15-30+ elements
+    - Publication-quality styling
+    - Mathematical notation where relevant
+    - Multi-panel layouts
+    - Font 10px+ for annotations, 14px+ for titles
+    - Statistical visualizations
+    - viewBox="0 0 800 600"
+    ```
+  </Tab>
+</Tabs>
+
+## Progression Example: Teaching Fractions
+
+<AccordionGroup>
+  <Accordion title="K-2: Concrete Objects">
+    **Lesson:** "Parts of a Whole"
+    
+    "A pizza has 4 slices. You eat 1 slice. You ate 1 of 4."
+    
+    - Uses pizza (familiar object)
+    - Maximum 5 words per sentence
+    - Shows physical division
+    - No fraction notation
+  </Accordion>
+  
+  <Accordion title="Grade 3-4: Introduction to Notation">
+    **Lesson:** "What is a Fraction?"
+    
+    "A fraction shows part of a whole. When we cut a pizza into 4 equal slices, each slice is 1/4 of the pizza."
+    
+    - Introduces fraction notation (1/4)
+    - Still uses concrete example
+    - Explains "equal parts"
+    - 8 words per sentence maximum
+  </Accordion>
+  
+  <Accordion title="Grade 5-6: Operations">
+    **Lesson:** "Adding Fractions with Unlike Denominators"
+    
+    "To add fractions with different denominators, we must first find a common denominator. For example, to add 1/3 + 1/4, we find that 12 is divisible by both 3 and 4..."
+    
+    - Introduces algorithms
+    - Uses mathematical vocabulary
+    - Shows step-by-step process
+    - Abstract reasoning required
+  </Accordion>
+  
+  <Accordion title="Grade 7-8: Rational Numbers">
+    **Lesson:** "Rational Numbers and Their Properties"
+    
+    "Rational numbers are numbers that can be expressed as a ratio of two integers, where the denominator is not zero. This set includes all fractions, terminating decimals, and repeating decimals..."
+    
+    - Formal mathematical definitions
+    - Set theory concepts
+    - Proofs and properties
+    - Cross-disciplinary connections
+  </Accordion>
+  
+  <Accordion title="Grade 9+: Advanced Concepts">
+    **Lesson:** "The Rational Number System and Field Axioms"
+    
+    "The set of rational numbers ℚ forms a field under standard addition and multiplication operations. We can prove that for any two rational numbers a/b and c/d (where b,d ≠ 0), their sum (ad + bc)/bd is also rational..."
+    
+    - Formal proofs
+    - Field theory
+    - Abstract algebra
+    - Research-level rigor
+  </Accordion>
+</AccordionGroup>
+
+## Implementation in Code
+
+The system automatically applies the correct constraints:
+
+```typescript
+// From server/services/enhanced-lesson-service.ts:106
+function buildEnhancedLessonPrompt(
+  gradeLevel: number, 
+  topic: string, 
+  subject?: string
+): string {
+  const limits = getWordLimits(gradeLevel);
+  const readingLevel = getReadingLevelInstructions(gradeLevel);
+  const mathRules = getMathematicalNotationRules(gradeLevel);
+  const gradePrompt = LESSON_PROMPTS.ENHANCED_LESSON(gradeLevel, topic);
+
+  return `You are creating an educational lesson for a grade ${gradeLevel} 
+          student about "${topic}"${subject ? ` (subject: ${subject})` : ''}.
+          
+          ${gradePrompt}
+          ${readingLevel}
+          ${mathRules}
+          
+          [Additional constraints...]
+          `;
+}
+```
+
+## Related Features
+
+<CardGroup cols={3}>
+  <Card title="AI Tutoring" icon="sparkles" href="/features/ai-tutoring">
+    How AI generates grade-specific content
+  </Card>
+  <Card title="Adaptive Learning" icon="chart-line" href="/features/adaptive-learning">
+    Performance-based content adjustment
+  </Card>
+  <Card title="Concept Tracking" icon="brain" href="/features/concept-tracking">
+    Tracking mastery of individual skills
+  </Card>
+</CardGroup>

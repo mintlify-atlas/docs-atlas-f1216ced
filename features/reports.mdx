@@ -1,0 +1,581 @@
+---
+title: Reports and Analytics
+description: Parent-facing reports and progress visualization in Sunschool
+icon: chart-bar
+---
+
+## Overview
+
+Sunschool provides comprehensive reports and analytics for parents to track learner progress, identify trends, and celebrate achievements. The reports system aggregates data from lessons, quizzes, concepts, and points to provide actionable insights.
+
+## Report Types
+
+<CardGroup cols={3}>
+  <Card title="Progress Report" icon="chart-line">
+    Overall learning progress and completion metrics
+  </Card>
+  <Card title="Lessons Report" icon="book-open">
+    Detailed lesson history and performance
+  </Card>
+  <Card title="Achievements Report" icon="trophy">
+    All earned achievements and milestones
+  </Card>
+</CardGroup>
+
+## Reports Page Structure
+
+```typescript
+// From client/src/pages/reports-page.tsx:16
+const ReportsPage: React.FC = () => {
+  const { user } = useAuth();
+  const [selectedLearnerId, setSelectedLearnerId] = useState<number | null>(null);
+  const [selectedReportType, setSelectedReportType] = useState<string>('progress');
+
+  // Fetch learners
+  const { data: learners } = useQuery({
+    queryKey: ["/api/learners", user?.id, user?.role],
+    queryFn: () => {
+      if (user?.role === 'PARENT') {
+        return apiRequest('GET', "/api/learners").then(res => res.data);
+      }
+      return Promise.resolve([]);
+    },
+    enabled: user?.role === 'PARENT' && !!user?.id,
+  });
+
+  // Fetch report data
+  const { data: reportData } = useQuery({
+    queryKey: [`/api/reports`, selectedLearnerId, selectedReportType],
+    queryFn: () => 
+      apiRequest('GET', 
+        `/api/reports?learnerId=${selectedLearnerId}&type=${selectedReportType}`
+      ).then(res => res.data),
+    enabled: !!selectedLearnerId,
+  });
+
+  // ... render reports
+};
+```
+
+## Progress Report
+
+The Progress Report shows high-level metrics and trends:
+
+### Key Metrics
+
+<Tabs>
+  <Tab title="Concepts Learned">
+    Total number of unique concepts the learner has been exposed to across all subjects.
+  </Tab>
+  <Tab title="Lessons Completed">
+    Count of lessons with `status === 'DONE'`.
+  </Tab>
+  <Tab title="Achievements Count">
+    Total achievements earned (one-time and repeatable).
+  </Tab>
+  <Tab title="Progress Rate">
+    Percentage of grade-appropriate concepts mastered.
+  </Tab>
+</Tabs>
+
+### Visual Components
+
+```typescript
+// From client/src/pages/reports-page.tsx:165
+<View style={styles.statsContainer}>
+  <View style={styles.statCard}>
+    <Text style={styles.statValue}>{analytics?.conceptsLearned || 0}</Text>
+    <Text style={styles.statLabel}>Concepts Learned</Text>
+  </View>
+  <View style={styles.statCard}>
+    <Text style={styles.statValue}>{analytics?.lessonsCompleted || 0}</Text>
+    <Text style={styles.statLabel}>Lessons Completed</Text>
+  </View>
+  <View style={styles.statCard}>
+    <Text style={styles.statValue}>{analytics?.achievementsCount || 0}</Text>
+    <Text style={styles.statLabel}>Achievements</Text>
+  </View>
+</View>
+
+<View style={styles.progressContainer}>
+  <View style={styles.progressBarContainer}>
+    <View 
+      style={[
+        styles.progressBar, 
+        { width: `${analytics?.progressRate || 0}%` }
+      ]} 
+    />
+  </View>
+  <Text style={styles.progressText}>
+    {Math.round(analytics?.progressRate || 0)}% Complete
+  </Text>
+</View>
+```
+
+### Subject Distribution
+
+Shows how lessons are distributed across subjects:
+
+```typescript
+// From client/src/pages/reports-page.tsx:198
+<View style={styles.subjectDistribution}>
+  {analytics?.subjectDistribution && 
+   Object.keys(analytics.subjectDistribution).length > 0 ? (
+    Object.entries(analytics.subjectDistribution).map(([subject, count], index) => (
+      <View key={subject} style={styles.subjectItem}>
+        <Text style={styles.subjectName}>{subject}</Text>
+        <View style={styles.subjectBarContainer}>
+          <View 
+            style={[
+              styles.subjectBar, 
+              { 
+                width: `${(count / maxCount) * 100}%`,
+                backgroundColor: colors.primary 
+              }
+            ]} 
+          />
+        </View>
+        <Text style={styles.subjectCount}>{count} lessons</Text>
+      </View>
+    ))
+  ) : (
+    <Text style={styles.emptyText}>No data available yet</Text>
+  )}
+</View>
+```
+
+## Lessons Report
+
+Detailed view of all completed lessons:
+
+### Lesson History Data
+
+```typescript
+interface LessonHistoryItem {
+  id: string;
+  topic: string;
+  subject: string;
+  gradeLevel: number;
+  score: number;
+  status: 'IN_PROGRESS' | 'DONE';
+  completedAt?: Date;
+  timeSpent?: number; // minutes
+}
+```
+
+### Filtering and Sorting
+
+<Tabs>
+  <Tab title="By Subject">
+    Filter to show only Math, Science, or other specific subjects
+  </Tab>
+  <Tab title="By Grade Level">
+    Show lessons for specific grade levels
+  </Tab>
+  <Tab title="By Date Range">
+    Custom date range selection (last week, last month, all time)
+  </Tab>
+  <Tab title="By Score">
+    Filter by score ranges (e.g., &lt;70%, 70-89%, 90%+)
+  </Tab>
+</Tabs>
+
+### Performance Trends
+
+Shows score trends over time:
+
+```typescript
+interface PerformanceTrend {
+  date: string;
+  averageScore: number;
+  lessonCount: number;
+}
+
+// Calculate 7-day moving average
+const calculateMovingAverage = (lessons: Lesson[], windowSize: number = 7) => {
+  const sorted = lessons
+    .filter(l => l.status === 'DONE' && l.score !== null)
+    .sort((a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime());
+  
+  const trends: PerformanceTrend[] = [];
+  
+  for (let i = windowSize - 1; i < sorted.length; i++) {
+    const window = sorted.slice(i - windowSize + 1, i + 1);
+    const avgScore = window.reduce((sum, l) => sum + l.score, 0) / window.length;
+    
+    trends.push({
+      date: sorted[i].completedAt,
+      averageScore: Math.round(avgScore),
+      lessonCount: window.length
+    });
+  }
+  
+  return trends;
+};
+```
+
+## Achievements Report
+
+Displays all earned achievements with dates and details:
+
+### Achievement Display
+
+```typescript
+// Render achievements with badges
+achievements.map(achievement => (
+  <View key={achievement.type} style={styles.achievementCard}>
+    <AchievementBadge 
+      achievement={achievement.payload}
+      size="medium"
+    />
+    <View style={styles.achievementDetails}>
+      <Text style={styles.achievementTitle}>{achievement.payload.title}</Text>
+      <Text style={styles.achievementDescription}>
+        {achievement.payload.description}
+      </Text>
+      <Text style={styles.achievementDate}>
+        Earned on {formatDate(achievement.earnedAt)}
+      </Text>
+    </View>
+  </View>
+))
+```
+
+### Achievement Categories
+
+<CardGroup cols={2}>
+  <Card title="Milestones" icon="flag-checkered">
+    First Steps, Learning Explorer (lesson count milestones)
+  </Card>
+  <Card title="Excellence" icon="star">
+    Perfect Score achievements
+  </Card>
+  <Card title="Mastery" icon="graduation-cap">
+    Subject mastery achievements (future)
+  </Card>
+  <Card title="Consistency" icon="calendar">
+    Streak achievements (future)
+  </Card>
+</CardGroup>
+
+## Export Capabilities
+
+### Download Full Report
+
+```typescript
+// From client/src/pages/reports-page.tsx:70
+const handleDownloadReport = () => {
+  if (!selectedLearnerId) return;
+  window.open(`/api/export?learnerId=${selectedLearnerId}`, '_blank');
+};
+```
+
+### Export Formats
+
+<Tabs>
+  <Tab title="PDF">
+    Formatted PDF report with charts and tables
+    
+    - Cover page with learner info
+    - Summary statistics
+    - Subject breakdowns
+    - Detailed lesson history
+    - Achievement gallery
+  </Tab>
+  <Tab title="CSV">
+    Raw data export for analysis in Excel/Google Sheets
+    
+    Includes:
+    - Lesson ID, Topic, Subject, Grade Level
+    - Score, Status, Completed Date
+    - Time Spent, Points Earned
+  </Tab>
+  <Tab title="JSON">
+    Machine-readable format for custom integrations
+    
+    Full data structure with nested objects and arrays
+  </Tab>
+</Tabs>
+
+## Performance Metrics Visualization
+
+### Concept Mastery Heatmap
+
+Visual grid showing mastery levels:
+
+```typescript
+interface MasteryHeatmapData {
+  concept: string;
+  subject: string;
+  masteryLevel: number; // 0-100
+  lastTested: Date;
+}
+
+// Color coding
+const getMasteryColor = (level: number) => {
+  if (level >= 85) return '#4CAF50';  // Green - Advanced
+  if (level >= 70) return '#2196F3';  // Blue - Proficient
+  if (level >= 40) return '#FFC107';  // Yellow - Developing
+  return '#F44336';                    // Red - Struggling
+};
+```
+
+### Subject Progress Chart
+
+Shows mastery percentage by subject:
+
+```typescript
+const subjectProgress = {
+  'Math': 78,
+  'Science': 85,
+  'Reading': 72,
+  'Social Studies': 65
+};
+
+// Render as horizontal bar chart
+Object.entries(subjectProgress).map(([subject, mastery]) => (
+  <View key={subject} style={styles.progressRow}>
+    <Text style={styles.subjectLabel}>{subject}</Text>
+    <View style={styles.progressBarOuter}>
+      <View 
+        style={[
+          styles.progressBarInner,
+          { 
+            width: `${mastery}%`,
+            backgroundColor: getMasteryColor(mastery)
+          }
+        ]}
+      />
+    </View>
+    <Text style={styles.masteryPercent}>{mastery}%</Text>
+  </View>
+))
+```
+
+## Analytics API Endpoints
+
+### Get Report Data
+
+```typescript
+GET /api/reports?learnerId={id}&type={reportType}
+
+Response:
+{
+  "profile": {
+    "id": 42,
+    "name": "Alice",
+    "gradeLevel": 5
+  },
+  "analytics": {
+    "conceptsLearned": 45,
+    "lessonsCompleted": 28,
+    "achievementsCount": 5,
+    "progressRate": 76,
+    "subjectDistribution": {
+      "Math": 12,
+      "Science": 8,
+      "Reading": 6,
+      "Social Studies": 2
+    },
+    "averageScore": 82,
+    "totalTimeSpent": 420  // minutes
+  },
+  "lessons": [...],
+  "achievements": [...]
+}
+```
+
+### Export Data
+
+```typescript
+GET /api/export?learnerId={id}&format={format}
+
+Formats: 'pdf' | 'csv' | 'json'
+
+Returns: File download with appropriate Content-Type headers
+```
+
+## Customization Options
+
+Parents can customize their reports:
+
+<AccordionGroup>
+  <Accordion title="Date Range Selection">
+    Choose to view data from:
+    - Last 7 days
+    - Last 30 days
+    - Last 3 months
+    - All time
+    - Custom date range
+  </Accordion>
+  
+  <Accordion title="Metric Selection">
+    Toggle which metrics to display:
+    - Overall progress
+    - Subject breakdowns
+    - Concept mastery
+    - Time spent
+    - Points earned
+    - Achievements
+  </Accordion>
+  
+  <Accordion title="Visualization Type">
+    Choose chart types:
+    - Bar charts
+    - Line charts
+    - Pie charts
+    - Heatmaps
+    - Tables
+  </Accordion>
+  
+  <Accordion title="Comparison Mode">
+    Compare multiple learners:
+    - Side-by-side metrics
+    - Relative performance
+    - Shared subjects
+  </Accordion>
+</AccordionGroup>
+
+## Insights and Recommendations
+
+Reports include automated insights:
+
+<Tabs>
+  <Tab title="Strengths">
+    **Strong Performance Detected:**
+    
+    "Alice shows exceptional mastery in Science concepts (85% average). Consider introducing more advanced topics in Earth Science and Biology."
+  </Tab>
+  
+  <Tab title="Areas for Growth">
+    **Needs Attention:**
+    
+    "Math performance has declined over the last 2 weeks (from 78% to 65%). Focus on fractions and division concepts, which show mastery below 50%."
+  </Tab>
+  
+  <Tab title="Engagement Patterns">
+    **Activity Trends:**
+    
+    "Most productive learning time: Tuesday and Thursday afternoons. Average session: 25 minutes. Recommend maintaining this schedule."
+  </Tab>
+  
+  <Tab title="Next Steps">
+    **Recommended Actions:**
+    
+    1. Practice fractions for 15 minutes daily
+    2. Review multiplication tables
+    3. Start new subject: World Geography (grade-appropriate)
+    4. Celebrate recent Perfect Score achievement!
+  </Tab>
+</Tabs>
+
+## Scheduled Reports
+
+Parents can schedule automatic report delivery:
+
+```typescript
+interface ScheduledReport {
+  learnerId: number;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  dayOfWeek?: number; // 0-6 for weekly
+  dayOfMonth?: number; // 1-31 for monthly
+  time: string; // HH:MM format
+  email: string;
+  format: 'pdf' | 'summary'; // PDF attachment or email summary
+}
+
+// Example: Weekly email every Monday at 9 AM
+{
+  learnerId: 42,
+  frequency: 'weekly',
+  dayOfWeek: 1,
+  time: '09:00',
+  email: 'parent@example.com',
+  format: 'summary'
+}
+```
+
+## Mobile-Optimized Views
+
+Reports are responsive and mobile-friendly:
+
+<CardGroup cols={2}>
+  <Card title="Card Layout" icon="grid">
+    Stats displayed as cards that stack vertically on mobile
+  </Card>
+  <Card title="Swipeable Charts" icon="swipe">
+    Horizontal scrolling for charts on small screens
+  </Card>
+  <Card title="Collapsible Sections" icon="compress">
+    Accordion-style sections to reduce scrolling
+  </Card>
+  <Card title="Touch-Friendly" icon="hand-pointer">
+    Large tap targets for filters and controls
+  </Card>
+</CardGroup>
+
+## Best Practices for Parents
+
+<AccordionGroup>
+  <Accordion title="Review Weekly">
+    Check reports at least once per week to stay informed about progress and catch issues early.
+  </Accordion>
+  
+  <Accordion title="Look for Trends">
+    Don't focus on individual scores. Look for patterns over time—improving, declining, or stable.
+  </Accordion>
+  
+  <Accordion title="Celebrate Progress">
+    Use the achievements report to recognize and celebrate milestones with your learner.
+  </Accordion>
+  
+  <Accordion title="Act on Insights">
+    When reports show struggling areas, take action—assign targeted practice or adjust difficulty.
+  </Accordion>
+  
+  <Accordion title="Share with Learners">
+    Appropriate reports can be shared with learners to build awareness of their own progress.
+  </Accordion>
+</AccordionGroup>
+
+## Privacy and Data Security
+
+<Warning>
+Reports contain personal educational data and should be treated as confidential.
+
+- Reports are only accessible to the parent account
+- Learners cannot access other learners' reports
+- Export files are not cached server-side
+- All API requests require authentication
+</Warning>
+
+## Future Enhancements
+
+<CardGroup cols={2}>
+  <Card title="Predictive Analytics" icon="crystal-ball">
+    ML models to predict future performance and suggest interventions
+  </Card>
+  <Card title="Benchmark Comparisons" icon="chart-mixed">
+    Compare against grade-level averages (anonymized data)
+  </Card>
+  <Card title="Goal Tracking" icon="bullseye">
+    Set custom learning goals and track progress toward them
+  </Card>
+  <Card title="Interactive Dashboards" icon="dashboard">
+    Drill-down capabilities to explore data at granular levels
+  </Card>
+</CardGroup>
+
+## Related Features
+
+<CardGroup cols={3}>
+  <Card title="Mastery System" icon="trophy" href="/features/mastery-system">
+    Concept mastery calculations powering analytics
+  </Card>
+  <Card title="Concept Tracking" icon="brain" href="/features/concept-tracking">
+    Per-concept performance data
+  </Card>
+  <Card title="Points System" icon="coins" href="/features/points-system">
+    Points earning patterns and history
+  </Card>
+</CardGroup>

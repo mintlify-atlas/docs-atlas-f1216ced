@@ -1,0 +1,320 @@
+---
+title: 'Learners'
+description: 'Create and manage learner accounts and profiles'
+icon: 'graduation-cap'
+---
+
+## Get Learners
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash GET /api/learners
+curl -X GET https://api.sunschool.xyz/api/learners \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="parentId" type="string">
+  Filter learners by parent ID (ADMIN only)
+</ParamField>
+
+### Behavior by Role
+
+- **ADMIN**: Returns all learners, or learners for a specific parent if `parentId` is provided
+- **PARENT**: Returns learners belonging to the authenticated parent
+
+### Response
+
+```json Response Example
+[
+  {
+    "id": 3,
+    "username": "alice-learner-123456",
+    "email": "alice@example.com",
+    "name": "Alice",
+    "role": "LEARNER",
+    "parentId": 1
+  }
+]
+```
+
+### Error Codes
+
+- **400** - Invalid request
+- **500** - Internal server error
+
+---
+
+## Create Learner
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash POST /api/learners
+curl -X POST https://api.sunschool.xyz/api/learners \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Alice",
+    "email": "alice@example.com",
+    "gradeLevel": 5,
+    "role": "LEARNER"
+  }'
+```
+
+<ParamField body="name" type="string" required>
+  Learner's name
+</ParamField>
+
+<ParamField body="email" type="string">
+  Optional email address (must be valid format if provided)
+</ParamField>
+
+<ParamField body="gradeLevel" type="number">
+  Grade level (K-12, where K=0). Defaults to 5 if not provided
+</ParamField>
+
+<ParamField body="role" type="string">
+  User role. Defaults to "LEARNER"
+</ParamField>
+
+<ParamField body="parentId" type="string">
+  Parent ID (ADMIN only). If not provided, uses the authenticated user's ID
+</ParamField>
+
+<Warning>
+  Username is automatically generated from the name and timestamp.
+  Email is optional for learners. If omitted, a temporary email will be generated.
+</Warning>
+
+### Response
+
+<ResponseField name="id" type="number">
+  Learner user ID
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  Auto-generated username
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Learner's name
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  Email address
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  User role (LEARNER)
+</ResponseField>
+
+<ResponseField name="parentId" type="number">
+  Parent user ID
+</ResponseField>
+
+```json Response Example
+{
+  "id": 3,
+  "username": "alice-123456",
+  "name": "Alice",
+  "email": "alice@example.com",
+  "role": "LEARNER",
+  "parentId": 1
+}
+```
+
+<Note>
+  Creating a learner also automatically creates a learner profile with default grade level and subjects, plus 3 starter reward goals.
+</Note>
+
+### Error Codes
+
+- **400** - Missing required field: name
+- **400** - Invalid email format
+- **400** - Learner accounts must have a parent
+- **409** - Email already in use
+- **409** - Username already taken
+- **500** - Failed to create learner account
+
+---
+
+## Delete Learner
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash DELETE /api/learners/:id
+curl -X DELETE https://api.sunschool.xyz/api/learners/3 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="id" type="string" required>
+  Learner user ID to delete
+</ParamField>
+
+<Warning>
+  Parents can only delete their own learners. This action is irreversible.
+</Warning>
+
+### Response
+
+```json Success Response
+{
+  "success": true,
+  "message": "Learner deleted successfully"
+}
+```
+
+### Error Codes
+
+- **400** - Can only delete learner accounts
+- **403** - Not authorized to delete this learner
+- **404** - Learner not found
+- **500** - Failed to delete learner
+
+---
+
+## Get Learner Profile
+
+<Note>
+  **Authentication Required:** Any authenticated user with access to the learner
+</Note>
+
+```bash GET /api/learner-profile/:userId
+curl -X GET https://api.sunschool.xyz/api/learner-profile/3 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="userId" type="number" required>
+  Learner user ID
+</ParamField>
+
+### Authorization
+
+- **ADMIN**: Can view any profile
+- **PARENT**: Can view their children's profiles
+- **LEARNER**: Can view their own profile
+
+<Note>
+  If a profile doesn't exist, one will be automatically created with default values.
+</Note>
+
+### Response
+
+<ResponseField name="id" type="string">
+  Profile UUID
+</ResponseField>
+
+<ResponseField name="userId" type="string">
+  Learner user ID
+</ResponseField>
+
+<ResponseField name="gradeLevel" type="number">
+  Grade level (0-12, where 0 is Kindergarten)
+</ResponseField>
+
+<ResponseField name="graph" type="object">
+  Knowledge graph with nodes and edges
+</ResponseField>
+
+<ResponseField name="subjects" type="array">
+  Array of subject strings
+</ResponseField>
+
+<ResponseField name="subjectPerformance" type="object">
+  Performance metrics by subject
+</ResponseField>
+
+<ResponseField name="recommendedSubjects" type="array">
+  Recommended subjects for the learner
+</ResponseField>
+
+<ResponseField name="strugglingAreas" type="array">
+  Areas where the learner needs improvement
+</ResponseField>
+
+```json Response Example
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "userId": "3",
+  "gradeLevel": 5,
+  "graph": {
+    "nodes": [],
+    "edges": []
+  },
+  "subjects": ["Math", "Reading", "Science"],
+  "subjectPerformance": {},
+  "recommendedSubjects": [],
+  "strugglingAreas": [],
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Error Codes
+
+- **400** - Invalid user ID format
+- **403** - Forbidden
+- **404** - User not found
+- **500** - Failed to get or create learner profile
+
+---
+
+## Update Learner Profile
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash PUT /api/learner-profile/:userId
+curl -X PUT https://api.sunschool.xyz/api/learner-profile/3 \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "gradeLevel": 6,
+    "subjects": ["Math", "Science", "History"]
+  }'
+```
+
+<ParamField path="userId" type="string" required>
+  Learner user ID
+</ParamField>
+
+<ParamField body="gradeLevel" type="number | string">
+  Grade level (K-12, where K or 0 is Kindergarten)
+</ParamField>
+
+<ParamField body="subjects" type="array">
+  Array of subject names
+</ParamField>
+
+<ParamField body="recommendedSubjects" type="array">
+  Recommended subjects
+</ParamField>
+
+<ParamField body="strugglingAreas" type="array">
+  Areas needing improvement
+</ParamField>
+
+<ParamField body="graph" type="object">
+  Knowledge graph data
+</ParamField>
+
+<Note>
+  At least one field must be provided to update. Parents can only update their own children's profiles.
+</Note>
+
+### Response
+
+Returns the updated profile object (same structure as GET response).
+
+### Error Codes
+
+- **400** - Invalid user ID format
+- **400** - No valid update data provided
+- **400** - Grade level must be between K and 12
+- **403** - Not authorized to update this profile
+- **500** - Failed to update learner profile

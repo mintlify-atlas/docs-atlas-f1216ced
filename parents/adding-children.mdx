@@ -1,0 +1,445 @@
+---
+title: Adding and Managing Children
+description: Create and configure learner accounts for your children
+---
+
+# Adding and Managing Children
+
+Sunschool allows parents to create and manage multiple learner accounts, each with personalized settings and grade-appropriate content.
+
+## Creating Learner Accounts
+
+### From the Dashboard
+
+If you don't have any children yet, you'll see an inline form on the dashboard. Otherwise, click the "Add Another Child" button.
+
+### Using the Dedicated Page
+
+Navigate to `/add-learner` for a full-page form with more options.
+
+From `add-learner-page.tsx:12-16`:
+
+```typescript
+const [newLearner, setNewLearner] = useState({
+  name: '',
+  gradeLevel: '',   // "K", "1", "2", ... "12"
+});
+```
+
+## Required Information
+
+<Steps>
+  <Step title="Child's Name">
+    Enter your child's first name or preferred nickname
+    
+    ```typescript
+    // From add-learner-page.tsx:39-42
+    if (!newLearner.name) {
+      setError('Please enter a name');
+      return;
+    }
+    ```
+    
+    <Info>
+    The name is used throughout the interface to personalize the learning experience.
+    </Info>
+  </Step>
+  
+  <Step title="Grade Level">
+    Select from Kindergarten (K) through Grade 12
+    
+    The grade picker shows all available options:
+    
+    ```typescript
+    // From add-learner-page.tsx:30-35
+    const gradeToNumber = (grade: string): number | null => {
+      if (grade === 'K') return 0;
+      const num = parseInt(grade, 10);
+      if (isNaN(num) || num < 1 || num > 12) return null;
+      return num;
+    };
+    ```
+  </Step>
+</Steps>
+
+### Grade Level Conversion
+
+<AccordionGroup>
+  <Accordion title="How Grade Levels Work">
+    Sunschool uses numeric grade levels internally:
+    
+    - **Kindergarten (K)** = 0
+    - **Grade 1** = 1
+    - **Grade 2** = 2
+    - ...
+    - **Grade 12** = 12
+    
+    This allows for consistent curriculum mapping and appropriate content difficulty.
+  </Accordion>
+  
+  <Accordion title="Choosing the Right Grade">
+    Select the grade your child is currently in or will be entering. The system will:
+    
+    - Adapt lesson difficulty automatically
+    - Recommend age-appropriate subjects
+    - Adjust vocabulary and complexity
+    - Track grade-level progress
+  </Accordion>
+</AccordionGroup>
+
+## The Add Learner Form
+
+From `add-learner-page.tsx:84-150`:
+
+```typescript
+return (
+  <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SunschoolHeader subtitle="Add Child" />
+
+    <ScrollView contentContainerStyle={styles.scrollContent}>
+      <View style={[styles.formContainer, { backgroundColor: colors.surfaceColor }]}>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>
+          {user?.role === 'ADMIN' ? 'Add New Learner Account' : 'Add Child'}
+        </Text>
+
+        {error ? (
+          <View style={[styles.errorContainer, { backgroundColor: colors.error + '18' }]}>
+            <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.formGroup}>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            {user?.role === 'ADMIN' ? 'Learner Name' : 'Child\'s Name'}
+          </Text>
+          <TextInput
+            style={[styles.input, {
+              borderColor: colors.divider,
+              color: colors.textPrimary,
+              backgroundColor: colors.inputBackground,
+            }]}
+            value={newLearner.name}
+            onChangeText={(text) => setNewLearner({ ...newLearner, name: text })}
+            placeholder={user?.role === 'ADMIN' ? "Enter learner's name" : "Enter child's name"}
+            placeholderTextColor={colors.textSecondary}
+          />
+        </View>
+
+        <View style={styles.formGroup}>
+          <GradePicker
+            value={newLearner.gradeLevel}
+            onChange={(grade) => setNewLearner({ ...newLearner, gradeLevel: grade })}
+          />
+        </View>
+      </View>
+    </ScrollView>
+  </SafeAreaView>
+);
+```
+
+### Form Validation
+
+The system validates input before creating the account:
+
+```typescript
+// From add-learner-page.tsx:37-49
+const handleSubmit = async () => {
+  // Validation
+  if (!newLearner.name) {
+    setError('Please enter a name');
+    return;
+  }
+
+  const gradeLevel = gradeToNumber(newLearner.gradeLevel);
+  if (gradeLevel === null) {
+    setError('Please select a grade level');
+    return;
+  }
+
+  // Create learner account
+  await apiRequest('POST', '/api/learners', {
+    ...newLearner,
+    gradeLevel,
+    role: 'LEARNER',
+    parentId: user?.id,
+  });
+};
+```
+
+<Warning>
+Both name and grade level are required. The form will show an error if either is missing.
+</Warning>
+
+## Creating the Account
+
+When you submit the form:
+
+1. **Validation** - Checks that name and grade are provided
+2. **API Request** - Sends learner data to the server
+3. **Account Creation** - Server creates user with LEARNER role
+4. **Parent Link** - Associates learner with your parent account
+5. **Profile Setup** - Initializes learner profile with grade level
+6. **Redirect** - Takes you back to the learners list
+
+From `add-learner-page.tsx:50-72`:
+
+```typescript
+try {
+  setIsSubmitting(true);
+  setError('');
+
+  // Create learner account
+  await apiRequest('POST', '/api/learners', {
+    ...newLearner,
+    gradeLevel,
+    role: 'LEARNER',
+    parentId: user?.id,
+  });
+
+  // Show success toast
+  toast({
+    title: 'Success',
+    description: 'Child account created successfully',
+  });
+
+  // Refresh learners list
+  queryClient.invalidateQueries({ queryKey: ['/api/learners', user?.id, user?.role] });
+
+  // Navigate back to learners page
+  setLocation('/learners');
+} catch (err: any) {
+  setIsSubmitting(false);
+  setError(err.response?.data?.error || 'Failed to create account. Please try again.');
+}
+```
+
+## Managing Existing Learners
+
+### The Learners Page
+
+Navigate to `/learners` to see all your children and manage their settings.
+
+From `learners-page.tsx:39-50`:
+
+```typescript
+const {
+  data: learners = [],
+  isLoading,
+  error: fetchError
+} = useQuery({
+  queryKey: ["/api/learners", user?.id, user?.role],
+  queryFn: async () => {
+    const response = await apiRequest('GET', '/api/learners');
+    return response.data;
+  },
+});
+```
+
+### Learner Cards
+
+Each learner is displayed in a card showing:
+
+- **Name and email** (if provided)
+- **Current grade level** badge
+- **Action buttons** for editing and viewing
+
+From `learners-page.tsx:362-416`:
+
+```typescript
+const renderLearnerItem = ({ item }: { item: any }) => {
+  const profile = learnerProfiles?.[item.id];
+  const gradeLevel = profile?.gradeLevel !== undefined ? profile.gradeLevel : null;
+  
+  return (
+    <TouchableOpacity style={styles.learnerCard}>
+      <View style={styles.learnerInfo}>
+        <Text style={styles.learnerName}>{item.name}</Text>
+        <Text style={styles.learnerEmail}>{item.email}</Text>
+        {gradeLevel !== null && (
+          <View style={styles.gradeBadge}>
+            <Text style={styles.gradeBadgeText}>
+              {gradeLevel === 0 ? 'K' : `Grade ${gradeLevel}`}
+            </Text>
+          </View>
+        )}
+      </View>
+      
+      <View style={styles.learnerActions}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => openEditModal(item)}
+        >
+          <Edit size={18} color={colors.primary} />
+          <Text style={styles.actionButtonText}>Edit</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => openSubjectsModal(item, profile)}
+        >
+          <BarChart2 size={18} color={colors.primary} />
+          <Text style={styles.actionButtonText}>Subjects</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+};
+```
+
+## Editing Grade Levels
+
+### The Edit Modal
+
+From `learners-page.tsx:486-569`, you can update a child's grade level:
+
+```typescript
+const handleUpdateGradeLevel = () => {
+  if (!currentEditLearner) {
+    setError('No learner selected for editing');
+    return;
+  }
+  
+  let gradeLevelNum: number;
+  if (editGradeLevel === 'K') {
+    gradeLevelNum = 0; // Kindergarten
+  } else {
+    gradeLevelNum = parseInt(editGradeLevel);
+    if (isNaN(gradeLevelNum) || gradeLevelNum < 0 || gradeLevelNum > 12) {
+      setError('Please enter a valid grade level (K or 1-12)');
+      return;
+    }
+  }
+  
+  updateGradeLevelMutation.mutate({
+    userId: currentEditLearner.id,
+    gradeLevel: gradeLevelNum.toString(),
+  });
+};
+```
+
+<Info>
+Updating a child's grade level adjusts their recommended curriculum and lesson difficulty automatically.
+</Info>
+
+## Configuring Learner Profiles
+
+### Setting Subjects
+
+From `learners-page.tsx:329-337`, you can configure:
+
+- **Active subjects** - What the child is currently learning
+- **Recommended subjects** - Suggestions based on their progress
+- **Struggling areas** - Topics needing extra attention
+
+```typescript
+const openSubjectsModal = (learner: any, profile: any) => {
+  setCurrentEditLearner(learner);
+  setCurrentProfile(profile);
+  setSubjects(profile.subjects || ['Math', 'Reading', 'Science']);
+  setRecommendedSubjects(profile.recommendedSubjects || []);
+  setStrugglingAreas(profile.strugglingAreas || []);
+  setSubjectsModalVisible(true);
+};
+```
+
+### Knowledge Graph
+
+The knowledge graph visualizes learning concepts and their relationships:
+
+From `learners-page.tsx:339-360`:
+
+```typescript
+const openGraphModal = (learner: any, profile: any) => {
+  setCurrentEditLearner(learner);
+  setCurrentProfile(profile);
+  
+  if (profile && profile.graph) {
+    setGraph(profile.graph);
+  } else {
+    // Initialize with default concepts
+    setGraph({
+      nodes: [
+        { id: 'math', label: 'Mathematics' },
+        { id: 'algebra', label: 'Algebra' },
+        { id: 'geometry', label: 'Geometry' },
+        { id: 'reading', label: 'Reading' }
+      ],
+      edges: [
+        { source: 'math', target: 'algebra' },
+        { source: 'math', target: 'geometry' },
+      ]
+    });
+  }
+  setGraphModalVisible(true);
+};
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Accurate Grade Levels" icon="graduation-cap">
+    Keep grade levels up-to-date as children advance to ensure appropriate content difficulty.
+  </Card>
+  
+  <Card title="Multiple Children" icon="users">
+    Each child should have their own account for personalized learning paths.
+  </Card>
+  
+  <Card title="Subject Configuration" icon="books">
+    Review and update subjects regularly based on school curriculum and interests.
+  </Card>
+  
+  <Card title="Privacy" icon="shield">
+    Use first names or nicknames rather than full names for additional privacy.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Child not appearing in list">
+    If a newly created child doesn't appear:
+    
+    1. Refresh the page
+    2. Check for error messages during creation
+    3. Verify you're logged in as a PARENT role
+    4. Ensure the creation was successful (look for success toast)
+  </Accordion>
+  
+  <Accordion title="Can't update grade level">
+    If grade level updates fail:
+    
+    1. Ensure you selected a valid grade (K-12)
+    2. Check your internet connection
+    3. Try logging out and back in
+    4. Contact support if the issue persists
+  </Accordion>
+  
+  <Accordion title="Missing learner profiles">
+    Learner profiles are created automatically when you add a child. If missing:
+    
+    1. The system will create it on first access
+    2. Grade level defaults may apply
+    3. You can manually set all preferences
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="View Dashboard" icon="gauge" href="/parents/dashboard">
+    See all your children at a glance
+  </Card>
+  
+  <Card title="Track Progress" icon="chart-line" href="/parents/progress-tracking">
+    Monitor learning activity and achievements
+  </Card>
+  
+  <Card title="Set Up Goals" icon="target" href="/parents/learning-goals">
+    Create learning objectives for your children
+  </Card>
+  
+  <Card title="Configure Rewards" icon="gift" href="/parents/rewards-system">
+    Set up motivational incentives
+  </Card>
+</CardGroup>

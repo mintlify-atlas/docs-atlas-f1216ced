@@ -1,0 +1,582 @@
+---
+title: Database Sync Feature
+description: Replicate your Sunschool data to an external PostgreSQL database
+---
+
+# Database Synchronization
+
+Sunschool's database sync feature allows parents to replicate their account data and all associated learner information to an external PostgreSQL database. This provides data ownership, backup, and integration capabilities.
+
+## What is Database Sync?
+
+Database sync creates a complete copy of your Sunschool data in a PostgreSQL database that you control. This includes:
+
+- User accounts (parent and all learners)
+- Learner profiles and settings
+- Complete lesson history
+- Achievements and progress
+- Points and rewards data
+- All relationships and metadata
+
+## Access Requirements
+
+<Warning>
+Database sync is only available to **PARENT** role users. This feature is found at `/database-sync`.
+</Warning>
+
+From `database-sync-page.tsx:222-232`:
+
+```typescript
+if (!user || user.role !== 'PARENT') {
+  return (
+    <AppLayout>
+      <View style={styles.container}>
+        <Text style={styles.title}>Access Denied</Text>
+        <Text>This page is only available to parent users.</Text>
+      </View>
+    </AppLayout>
+  );
+}
+```
+
+## Creating a Sync Configuration
+
+### Required Information
+
+You need a PostgreSQL connection string in this format:
+
+```
+postgresql://username:password@hostname:port/database
+```
+
+Example:
+```
+postgresql://myuser:mypass@db.example.com:5432/sunschool_backup
+```
+
+### The Configuration Form
+
+From `database-sync-page.tsx:242-295`:
+
+```typescript
+<View style={styles.formContainer}>
+  <Text style={styles.formTitle}>
+    {isEditMode ? 'Update Sync Configuration' : 'Create New Sync Configuration'}
+  </Text>
+  
+  <View style={styles.formGroup}>
+    <Text style={styles.label}>PostgreSQL Database URL</Text>
+    <TextInput
+      style={styles.input}
+      value={targetDbUrl}
+      onChangeText={setTargetDbUrl}
+      placeholder="postgresql://username:password@hostname:port/database"
+      autoCapitalize="none"
+    />
+  </View>
+  
+  <View style={styles.formGroup}>
+    <TouchableOpacity 
+      style={styles.checkboxContainer}
+      onPress={() => setContinuousSync(!continuousSync)}
+    >
+      <View style={[styles.checkbox, continuousSync && styles.checkboxChecked]}>
+        {continuousSync && <Check size={14} color="#fff" />}
+      </View>
+      <Text style={styles.checkboxLabel}>Enable Continuous Synchronization</Text>
+    </TouchableOpacity>
+  </View>
+</View>
+```
+
+### URL Validation
+
+The form validates your database URL before submitting:
+
+From `database-sync-page.tsx:161-172`:
+
+```typescript
+const handleSubmit = () => {
+  if (!targetDbUrl) {
+    setFormError('Database URL is required');
+    return;
+  }
+
+  // Simple validation for the URL format
+  const urlPattern = /^postgresql:\/\/\w+:.*@[\w.-]+:\d+\/\w+(\?.*)?$/;
+  if (!urlPattern.test(targetDbUrl)) {
+    setFormError('Invalid PostgreSQL URL format. Example: postgresql://username:password@hostname:port/database');
+    return;
+  }
+  
+  // Create or update configuration
+};
+```
+
+<Steps>
+  <Step title="Enter Database URL">
+    Provide the connection string for your PostgreSQL database
+    
+    <Info>
+    The database must be accessible from Sunschool's server. Use public hostnames or IPs, not localhost.
+    </Info>
+  </Step>
+  
+  <Step title="Choose Sync Mode">
+    **Manual Sync** - You trigger syncs when needed
+    
+    **Continuous Sync** - Automatic syncs at regular intervals
+  </Step>
+  
+  <Step title="Create Configuration">
+    Click "Create" to save the configuration
+    
+    The system validates:
+    - URL format is correct
+    - Connection can be established
+    - Database schema is compatible
+  </Step>
+</Steps>
+
+## Sync Modes
+
+### Manual Sync
+
+With manual sync (continuousSync = false):
+
+- You control when data is replicated
+- Click the refresh icon to initiate a sync
+- Useful for periodic backups
+- No automatic updates
+
+From `database-sync-page.tsx:156-158`:
+
+```typescript
+const handleSync = (id: string) => {
+  syncMutation.mutate(id);
+};
+```
+
+### Continuous Sync
+
+With continuous sync enabled:
+
+- Automatic synchronization runs periodically
+- Your data is always up-to-date
+- Ideal for real-time integration
+- Minimal manual intervention
+
+<Warning>
+Continuous sync can increase database load. Ensure your PostgreSQL server has adequate resources.
+</Warning>
+
+## Sync Status
+
+Configurations have four possible statuses:
+
+<CardGroup cols={2}>
+  <Card title="IDLE" icon="database">
+    **Gray badge**
+    
+    No sync in progress, waiting for trigger
+  </Card>
+  
+  <Card title="IN_PROGRESS" icon="refresh-cw">
+    **Blue badge**
+    
+    Sync currently running, data being replicated
+  </Card>
+  
+  <Card title="COMPLETED" icon="check">
+    **Green badge**
+    
+    Last sync finished successfully
+  </Card>
+  
+  <Card title="FAILED" icon="x">
+    **Red badge**
+    
+    Last sync encountered an error
+  </Card>
+</CardGroup>
+
+From `database-sync-page.tsx:185-214`:
+
+```typescript
+const renderStatusBadge = (status: SyncConfig['syncStatus']) => {
+  let color = '#ccc';
+  let Icon = RefreshCw;
+
+  switch (status) {
+    case 'COMPLETED':
+      color = '#4CAF50';
+      Icon = Check;
+      break;
+    case 'FAILED':
+      color = '#F44336';
+      Icon = X;
+      break;
+    case 'IN_PROGRESS':
+      color = '#2196F3';
+      Icon = RefreshCw;
+      break;
+    case 'IDLE':
+    default:
+      color = '#9E9E9E';
+      Icon = Database;
+  }
+
+  return (
+    <View style={[styles.statusBadge, { backgroundColor: color }]}>
+      <Icon size={14} color="#fff" />
+      <Text style={styles.statusText}>{status}</Text>
+    </View>
+  );
+};
+```
+
+## Running a Sync
+
+### Manual Trigger
+
+Click the refresh icon on any configuration card to start a sync:
+
+From `database-sync-page.tsx:87-124`:
+
+```typescript
+const syncMutation = useMutation({
+  mutationFn: async (id: string) => {
+    const response = await axios.post(`/api/sync-configs/${id}/push`);
+    return response.data;
+  },
+  onSuccess: (data, id) => {
+    // Poll for status updates every 2 seconds
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await axios.get(`/api/sync-configs/${id}`);
+        const config = response.data;
+        
+        // If completed or failed, stop polling
+        if (config.syncStatus === 'COMPLETED' || config.syncStatus === 'FAILED') {
+          clearInterval(pollInterval);
+          queryClient.invalidateQueries({ queryKey: ['syncConfigs'] });
+        }
+      } catch (error) {
+        console.error('Error polling sync status:', error);
+        clearInterval(pollInterval);
+      }
+    }, 2000);
+    
+    // Safety timeout after 30 seconds
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      queryClient.invalidateQueries({ queryKey: ['syncConfigs'] });
+    }, 30000);
+    
+    queryClient.invalidateQueries({ queryKey: ['syncConfigs'] });
+  },
+});
+```
+
+### What Gets Synced
+
+From `server/sync-utils.ts` (referenced in routes), the sync process:
+
+1. **Establishes connection** to target database
+2. **Creates schema** if it doesn't exist
+3. **Replicates tables**:
+   - Users (parent and learners)
+   - Learner profiles
+   - Lessons
+   - Achievements
+   - Points transactions
+   - Rewards and redemptions
+4. **Maintains relationships** (foreign keys)
+5. **Updates sync timestamp** and status
+
+<Info>
+Syncs are incremental when possible, only copying new or changed data to reduce transfer time.
+</Info>
+
+## Monitoring Sync Progress
+
+The UI shows detailed sync information:
+
+From `database-sync-page.tsx:306-357`:
+
+```typescript
+<View key={config.id} style={styles.configCard}>
+  <View style={styles.configHeader}>
+    {renderStatusBadge(config.syncStatus)}
+    <View style={styles.configActions}>
+      <TouchableOpacity 
+        onPress={() => handleSync(config.id)}
+        disabled={config.syncStatus === 'IN_PROGRESS' || syncMutation.isPending}
+        style={styles.actionButton}
+      >
+        <RefreshCw size={18} color="#2196F3" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity onPress={() => handleEdit(config)}>
+        <Edit size={18} color="#FF9800" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity onPress={() => handleDelete(config.id)}>
+        <Trash2 size={18} color="#F44336" />
+      </TouchableOpacity>
+    </View>
+  </View>
+  
+  <View style={styles.configDetails}>
+    <Text style={styles.configUrl}>{config.targetDbUrl}</Text>
+    
+    <View style={styles.configInfoRow}>
+      <Text style={styles.configInfoLabel}>Last Sync:</Text>
+      <Text style={styles.configInfoValue}>{formatDate(config.lastSyncAt)}</Text>
+    </View>
+    
+    <View style={styles.configInfoRow}>
+      <Text style={styles.configInfoLabel}>Continuous Sync:</Text>
+      <Text style={styles.configInfoValue}>{config.continuousSync ? 'Enabled' : 'Disabled'}</Text>
+    </View>
+    
+    {config.syncStatus === 'FAILED' && config.errorMessage && (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>{config.errorMessage}</Text>
+      </View>
+    )}
+  </View>
+</View>
+```
+
+## Managing Configurations
+
+### Editing
+
+Click the edit icon to modify:
+- Database URL
+- Continuous sync setting
+
+From `database-sync-page.tsx:135-141`:
+
+```typescript
+const handleEdit = (config: SyncConfig) => {
+  setIsEditMode(true);
+  setEditingConfigId(config.id);
+  setTargetDbUrl(config.targetDbUrl);
+  setContinuousSync(config.continuousSync);
+};
+```
+
+### Deleting
+
+Remove a configuration after confirmation:
+
+From `database-sync-page.tsx:143-153`:
+
+```typescript
+const handleDelete = (id: string) => {
+  Alert.alert(
+    'Confirm Delete',
+    'Are you sure you want to delete this sync configuration?',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate(id) }
+    ]
+  );
+};
+```
+
+<Warning>
+Deleting a sync configuration does **not** delete the replicated data in your external database. It only removes the sync relationship.
+</Warning>
+
+## Server-Side Implementation
+
+From `server/routes.ts:1413-1455`, the sync endpoints:
+
+### Get All Configurations
+
+```typescript
+app.get("/api/sync-configs", hasRole(["PARENT"]), asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+  
+  const syncConfigs = await storage.getSyncConfigsByParentId(ensureString(req.user.id));
+  res.json(syncConfigs);
+}));
+```
+
+### Create Configuration
+
+```typescript
+app.post("/api/sync-configs", hasRole(["PARENT"]), asyncHandler(async (req: AuthRequest, res) => {
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+  
+  const { targetDbUrl, continuousSync } = req.body;
+  
+  // Validate and create sync config
+  const config = await storage.createSyncConfig({
+    parentId: req.user.id,
+    targetDbUrl,
+    continuousSync: continuousSync ?? false,
+    syncStatus: 'IDLE'
+  });
+  
+  res.json(config);
+}));
+```
+
+### Push Sync
+
+```typescript
+app.post("/api/sync-configs/:id/push", hasRole(["PARENT"]), asyncHandler(async (req: AuthRequest, res) => {
+  // Update status to IN_PROGRESS
+  await storage.updateSyncConfig(id, { syncStatus: 'IN_PROGRESS' });
+  
+  try {
+    // Perform synchronization
+    await synchronizeToExternalDatabase(config);
+    
+    // Update status to COMPLETED
+    await storage.updateSyncConfig(id, {
+      syncStatus: 'COMPLETED',
+      lastSyncAt: new Date()
+    });
+  } catch (error) {
+    // Update status to FAILED
+    await storage.updateSyncConfig(id, {
+      syncStatus: 'FAILED',
+      errorMessage: error.message
+    });
+  }
+}));
+```
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Data Backup">
+    Maintain a complete backup of your Sunschool data:
+    - Protect against accidental deletion
+    - Preserve learning history
+    - Enable data recovery
+    - Comply with data retention policies
+  </Accordion>
+  
+  <Accordion title="Data Integration">
+    Connect Sunschool data with other systems:
+    - Import into business intelligence tools
+    - Integrate with school management systems
+    - Build custom reports and dashboards
+    - Analyze learning patterns
+  </Accordion>
+  
+  <Accordion title="Data Ownership">
+    Maintain full control of your data:
+    - Keep data on your infrastructure
+    - Meet organizational data policies
+    - Enable compliance audits
+    - Support data portability requirements
+  </Accordion>
+  
+  <Accordion title="Advanced Analytics">
+    Perform complex analysis:
+    - Run custom SQL queries
+    - Build machine learning models
+    - Generate specialized reports
+    - Track long-term trends
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Test First" icon="flask">
+    Create a test database first to verify your configuration works before using production databases.
+  </Card>
+  
+  <Card title="Secure Connections" icon="shield">
+    Use SSL/TLS for database connections:
+    ```
+    postgresql://user:pass@host:5432/db?sslmode=require
+    ```
+  </Card>
+  
+  <Card title="Monitor Status" icon="eye">
+    Check sync status regularly, especially for continuous sync configurations.
+  </Card>
+  
+  <Card title="Backup Credentials" icon="key">
+    Store your database credentials securely. Sunschool encrypts them but keep a backup.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Sync fails immediately">
+    Check:
+    1. Database URL format is correct
+    2. Database is accessible from Sunschool server
+    3. Credentials are valid
+    4. Database exists and you have write permissions
+    5. Firewall allows connections
+  </Accordion>
+  
+  <Accordion title="Sync hangs at IN_PROGRESS">
+    This might indicate:
+    1. Network connectivity issues
+    2. Very large dataset (first sync takes longer)
+    3. Database performance problems
+    4. Connection timeout
+    
+    The system has a 30-second safety timeout, after which it stops polling.
+  </Accordion>
+  
+  <Accordion title="Error: schema mismatch">
+    The target database schema doesn't match expected structure:
+    1. Let Sunschool create the schema automatically
+    2. Or manually create tables using provided schema
+    3. Don't modify table structures in target database
+  </Accordion>
+  
+  <Accordion title="Continuous sync not updating">
+    Verify:
+    1. Continuous sync is actually enabled
+    2. Last sync shows recent timestamp
+    3. No error messages in configuration
+    4. Database is still accessible
+  </Accordion>
+</AccordionGroup>
+
+## Security Considerations
+
+<Warning>
+**Important Security Notes:**
+
+1. **Credentials in Transit** - Use HTTPS for Sunschool UI to protect database credentials
+2. **Database Access** - Limit database user permissions to only what's needed
+3. **Network Security** - Consider using VPN or private network for database connections
+4. **Encryption at Rest** - Enable encryption on your PostgreSQL database
+5. **Regular Audits** - Review sync configurations and access logs periodically
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Data Export" icon="download" href="/parents/data-export">
+    Learn about simple JSON exports
+  </Card>
+  
+  <Card title="Progress Tracking" icon="chart-line" href="/parents/progress-tracking">
+    View learning data in the UI
+  </Card>
+  
+  <Card title="Reports" icon="file-text" href="/parents/reports-page">
+    Generate analytics reports
+  </Card>
+  
+  <Card title="Dashboard" icon="gauge" href="/parents/dashboard">
+    Return to the main parent view
+  </Card>
+</CardGroup>

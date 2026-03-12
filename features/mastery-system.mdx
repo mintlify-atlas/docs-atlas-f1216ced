@@ -1,0 +1,556 @@
+---
+title: Mastery System
+description: How Sunschool calculates and tracks concept mastery levels
+icon: trophy
+---
+
+## Overview
+
+The mastery system calculates how well a learner understands each concept based on quiz performance. Mastery levels range from 0-100% and determine when concepts need reinforcement.
+
+## Mastery Calculation
+
+### Formula
+
+Mastery level is calculated as a simple percentage:
+
+```typescript
+// From server/services/mastery-service.ts:50
+const newMasteryLevel = newTotalCount > 0 
+  ? Math.round((newCorrectCount / newTotalCount) * 100) 
+  : 0;
+```
+
+<Info>
+**Mastery Level** = (Correct Answers / Total Attempts) × 100
+
+This is rounded to the nearest integer for storage.
+</Info>
+
+### Example Calculations
+
+<Tabs>
+  <Tab title="High Mastery">
+    **Concept**: Addition
+    
+    - Correct: 18
+    - Total: 20
+    - **Mastery**: 90%
+    
+    ✅ Above threshold (70%) — concept mastered
+  </Tab>
+  <Tab title="Developing">
+    **Concept**: Multiplication
+    
+    - Correct: 8
+    - Total: 12
+    - **Mastery**: 67%
+    
+    ⚠️ Below threshold — needs reinforcement
+  </Tab>
+  <Tab title="Struggling">
+    **Concept**: Fractions
+    
+    - Correct: 3
+    - Total: 10
+    - **Mastery**: 30%
+    
+    ❌ Well below threshold — priority for practice
+  </Tab>
+  <Tab title="First Attempt">
+    **Concept**: Division (new)
+    
+    - Correct: 1
+    - Total: 1
+    - **Mastery**: 100%
+    
+    ℹ️ First attempt success, but needs more data
+  </Tab>
+</Tabs>
+
+## Mastery Threshold
+
+```typescript
+// From server/services/mastery-service.ts:25
+const MASTERY_THRESHOLD = 70; // 70% accuracy for mastery
+```
+
+Concepts are considered "mastered" at **70% or higher** accuracy.
+
+<Card title="Threshold Rationale" icon="lightbulb">
+70% is chosen as a balance between:
+- **Too Low** (e.g., 50%): Learner may have significant gaps
+- **Too High** (e.g., 90%): Unrealistic expectation, may discourage learners
+
+70% indicates solid understanding while allowing room for growth.
+</Card>
+
+## Updating Mastery
+
+Mastery is updated after each quiz question:
+
+```typescript
+// From server/services/mastery-service.ts:30
+export async function updateConceptMastery(
+  learnerId: number,
+  conceptName: string,
+  subject: string,
+  isCorrect: boolean
+): Promise<void> {
+  try {
+    // Check if mastery record exists
+    const existing = await db.execute(sql`
+      SELECT * FROM concept_mastery
+      WHERE learner_id = ${learnerId}
+        AND concept_name = ${conceptName}
+        AND subject = ${subject}
+    `);
+
+    if (existing.rows.length > 0) {
+      // Update existing record
+      const record = existing.rows[0] as any;
+      const newCorrectCount = record.correct_count + (isCorrect ? 1 : 0);
+      const newTotalCount = record.total_count + 1;
+      const newMasteryLevel = newTotalCount > 0 
+        ? Math.round((newCorrectCount / newTotalCount) * 100) 
+        : 0;
+      const needsReinforcement = newMasteryLevel < MASTERY_THRESHOLD;
+
+      await db.execute(sql`
+        UPDATE concept_mastery
+        SET
+          correct_count = ${newCorrectCount},
+          total_count = ${newTotalCount},
+          mastery_level = ${newMasteryLevel},
+          last_tested = NOW(),
+          needs_reinforcement = ${needsReinforcement}
+        WHERE learner_id = ${learnerId}
+          AND concept_name = ${conceptName}
+          AND subject = ${subject}
+      `);
+    } else {
+      // Create new record
+      const masteryLevel = isCorrect ? 100 : 0;
+      const needsReinforcement = masteryLevel < MASTERY_THRESHOLD;
+
+      await db.execute(sql`
+        INSERT INTO concept_mastery (
+          learner_id, concept_name, subject,
+          correct_count, total_count, mastery_level,
+          last_tested, needs_reinforcement
+        ) VALUES (
+          ${learnerId}, ${conceptName}, ${subject},
+          ${isCorrect ? 1 : 0}, 1, ${masteryLevel},
+          NOW(), ${needsReinforcement}
+        )
+      `);
+    }
+  } catch (error) {
+    console.error(`Error updating mastery for concept ${conceptName}:`, error);
+    throw error;
+  }
+}
+```
+
+<Steps>
+  <Step title="Question Answered">
+    Quiz answer is submitted with concept tags
+  </Step>
+  <Step title="Check Existing Mastery">
+    Look for existing mastery record for this learner + concept + subject
+  </Step>
+  <Step title="Update or Create">
+    If exists, update counts and recalculate mastery
+    
+    If new, create record with 100% (correct) or 0% (wrong)
+  </Step>
+  <Step title="Flag for Reinforcement">
+    Set `needs_reinforcement = true` if mastery < 70%
+  </Step>
+  <Step title="Update Timestamp">
+    Record when the concept was last tested
+  </Step>
+</Steps>
+
+## Bulk Updates from Quiz
+
+After a full quiz, update mastery for all concepts at once:
+
+```typescript
+// From server/services/mastery-service.ts:101
+export async function updateMasteryFromQuiz(
+  learnerId: number,
+  subject: string,
+  conceptTags: string[],
+  isCorrect: boolean
+): Promise<void> {
+  for (const concept of conceptTags) {
+    await updateConceptMastery(learnerId, concept, subject, isCorrect);
+  }
+}
+
+// From server/services/mastery-service.ts:267
+export async function bulkUpdateMasteryFromAnswers(
+  learnerId: number,
+  subject: string,
+  conceptsAndCorrectness: Array<{ concepts: string[]; isCorrect: boolean }>
+): Promise<void> {
+  for (const { concepts, isCorrect } of conceptsAndCorrectness) {
+    await updateMasteryFromQuiz(learnerId, subject, concepts, isCorrect);
+  }
+}
+```
+
+## Retrieving Learner Mastery
+
+### Get All Mastery Records
+
+```typescript
+// From server/services/mastery-service.ts:114
+export async function getLearnerMastery(
+  learnerId: number,
+  subject?: string
+): Promise<ConceptMastery[]> {
+  try {
+    let query;
+    if (subject) {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+          AND subject = ${subject}
+        ORDER BY mastery_level ASC, last_tested DESC
+      `;
+    } else {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+        ORDER BY subject, mastery_level ASC
+      `;
+    }
+
+    const results = await db.execute(query);
+    return results.rows.map(row => ({
+      id: (row as any).id,
+      learnerId: (row as any).learner_id,
+      conceptName: (row as any).concept_name,
+      subject: (row as any).subject,
+      correctCount: (row as any).correct_count,
+      totalCount: (row as any).total_count,
+      masteryLevel: parseFloat((row as any).mastery_level),
+      lastTested: new Date((row as any).last_tested),
+      needsReinforcement: (row as any).needs_reinforcement,
+      createdAt: (row as any).created_at ? new Date((row as any).created_at) : undefined
+    }));
+  } catch (error) {
+    console.error('Error fetching learner mastery:', error);
+    return [];
+  }
+}
+```
+
+### Get Concepts Needing Reinforcement
+
+```typescript
+// From server/services/mastery-service.ts:158
+export async function getConceptsNeedingReinforcement(
+  learnerId: number,
+  subject?: string,
+  limit: number = 5
+): Promise<ConceptMastery[]> {
+  try {
+    let query;
+    if (subject) {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+          AND subject = ${subject}
+          AND needs_reinforcement = true
+        ORDER BY mastery_level ASC, last_tested ASC
+        LIMIT ${limit}
+      `;
+    } else {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+          AND needs_reinforcement = true
+        ORDER BY mastery_level ASC, last_tested ASC
+        LIMIT ${limit}
+      `;
+    }
+
+    const results = await db.execute(query);
+    return results.rows.map(/* ... */);
+  } catch (error) {
+    console.error('Error fetching concepts needing reinforcement:', error);
+    return [];
+  }
+}
+```
+
+<Info>
+Results are sorted by:
+1. **Lowest mastery level first** (most struggling)
+2. **Oldest last_tested first** (hasn't practiced recently)
+
+This prioritizes concepts that are both low-performing and haven't been reviewed recently.
+</Info>
+
+## Mastery Summary
+
+Get an overview of all mastery data for a learner:
+
+```typescript
+// From server/services/mastery-service.ts:206
+export async function getMasterySummary(
+  learnerId: number
+): Promise<{
+  totalConcepts: number;
+  masteredConcepts: number;
+  needsReinforcementCount: number;
+  averageMastery: number;
+  bySubject: Record<string, { mastered: number; total: number; avgMastery: number }>;
+}> {
+  try {
+    const allMastery = await getLearnerMastery(learnerId);
+
+    const totalConcepts = allMastery.length;
+    const masteredConcepts = allMastery.filter(m => m.masteryLevel >= MASTERY_THRESHOLD).length;
+    const needsReinforcementCount = allMastery.filter(m => m.needsReinforcement).length;
+    const averageMastery =
+      totalConcepts > 0
+        ? allMastery.reduce((sum, m) => sum + m.masteryLevel, 0) / totalConcepts
+        : 0;
+
+    // Calculate by subject
+    const bySubject: Record<string, { mastered: number; total: number; avgMastery: number }> = {};
+    for (const mastery of allMastery) {
+      if (!bySubject[mastery.subject]) {
+        bySubject[mastery.subject] = { mastered: 0, total: 0, avgMastery: 0 };
+      }
+      bySubject[mastery.subject].total++;
+      if (mastery.masteryLevel >= MASTERY_THRESHOLD) {
+        bySubject[mastery.subject].mastered++;
+      }
+      bySubject[mastery.subject].avgMastery += mastery.masteryLevel;
+    }
+
+    // Calculate averages
+    for (const subject in bySubject) {
+      bySubject[subject].avgMastery /= bySubject[subject].total;
+    }
+
+    return {
+      totalConcepts,
+      masteredConcepts,
+      needsReinforcementCount,
+      averageMastery,
+      bySubject
+    };
+  } catch (error) {
+    console.error('Error calculating mastery summary:', error);
+    return {
+      totalConcepts: 0,
+      masteredConcepts: 0,
+      needsReinforcementCount: 0,
+      averageMastery: 0,
+      bySubject: {}
+    };
+  }
+}
+```
+
+Example response:
+
+```json
+{
+  "totalConcepts": 45,
+  "masteredConcepts": 32,
+  "needsReinforcementCount": 13,
+  "averageMastery": 76.8,
+  "bySubject": {
+    "Math": {
+      "mastered": 15,
+      "total": 20,
+      "avgMastery": 78.5
+    },
+    "Science": {
+      "mastered": 17,
+      "total": 25,
+      "avgMastery": 75.2
+    }
+  }
+}
+```
+
+## Mastery Decay (Future Enhancement)
+
+<Warning>
+**Not yet implemented** — but planned for future releases.
+</Warning>
+
+Mastery decay will reduce mastery levels over time if concepts aren't practiced:
+
+```typescript
+// Planned implementation
+interface MasteryDecayConfig {
+  decayRate: number;      // Percentage lost per day
+  decayThreshold: number; // Mastery level below which no decay occurs
+  decayInterval: number;  // Days between decay calculations
+}
+
+const DEFAULT_DECAY = {
+  decayRate: 0.5,         // 0.5% per day
+  decayThreshold: 40,     // Stop decay at 40%
+  decayInterval: 1        // Check daily
+};
+```
+
+### Planned Decay Algorithm
+
+<Steps>
+  <Step title="Calculate Days Since Last Test">
+    `daysSince = (NOW - last_tested) / 86400`
+  </Step>
+  <Step title="Calculate Decay Amount">
+    `decay = daysSince * decayRate`
+  </Step>
+  <Step title="Apply Decay">
+    `newMastery = max(decayThreshold, currentMastery - decay)`
+  </Step>
+  <Step title="Update Record">
+    Save new mastery level and set needs_reinforcement if below threshold
+  </Step>
+</Steps>
+
+### Example Decay Scenario
+
+- **Concept**: Multiplication
+- **Current Mastery**: 85%
+- **Last Tested**: 30 days ago
+- **Decay**: 30 days × 0.5% = 15%
+- **New Mastery**: 85% - 15% = **70%**
+
+## Spaced Repetition (Future Enhancement)
+
+Planned integration with spaced repetition algorithm:
+
+<Accordion title="Leitner System">
+Concepts are grouped into "boxes" based on mastery:
+
+- **Box 1** (0-40%): Review daily
+- **Box 2** (41-60%): Review every 3 days
+- **Box 3** (61-80%): Review weekly
+- **Box 4** (81-100%): Review monthly
+
+When a concept is answered correctly, it moves up a box. When wrong, it moves down.
+</Accordion>
+
+<Accordion title="SuperMemo Algorithm">
+More sophisticated algorithm that calculates optimal review intervals based on:
+
+- Number of repetitions
+- Ease factor (how easy the concept is for this learner)
+- Time since last review
+- Answer quality
+
+Interval = previous_interval × ease_factor
+</Accordion>
+
+## Data Structure
+
+```typescript
+// From server/services/mastery-service.ts:12
+export interface ConceptMastery {
+  id?: string;
+  learnerId: number;
+  conceptName: string;
+  subject: string;
+  correctCount: number;
+  totalCount: number;
+  masteryLevel: number;         // 0-100 integer
+  lastTested: Date;
+  needsReinforcement: boolean;
+  createdAt?: Date;
+}
+```
+
+## Visual Mastery Indicators
+
+<Tabs>
+  <Tab title="0-40%: Struggling">
+    🔴 **Red** — Priority for immediate practice
+  </Tab>
+  <Tab title="41-69%: Developing">
+    🟡 **Yellow** — Needs reinforcement
+  </Tab>
+  <Tab title="70-84%: Proficient">
+    🔵 **Blue** — Mastered, occasional review
+  </Tab>
+  <Tab title="85-100%: Advanced">
+    🟢 **Green** — Strong mastery, minimal review needed
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Regular Practice" icon="calendar">
+    Concepts should be tested regularly, ideally every few days, to maintain mastery and provide accurate data.
+  </Card>
+  <Card title="Balanced Coverage" icon="scale-balanced">
+    Ensure learners practice both new concepts and review older ones to prevent mastery decay.
+  </Card>
+  <Card title="Celebrate Milestones" icon="party-horn">
+    When a concept crosses 70% threshold, celebrate! When it reaches 90%, extra recognition.
+  </Card>
+  <Card title="Address Struggles Early" icon="triangle-exclamation">
+    Concepts below 50% should get immediate attention before gaps widen.
+  </Card>
+</CardGroup>
+
+## API Examples
+
+### Check Mastery for a Concept
+
+```typescript
+const mastery = await getLearnerMastery(42, 'Math');
+const fractionMastery = mastery.find(m => m.conceptName === 'fractions');
+
+if (fractionMastery && fractionMastery.masteryLevel < 70) {
+  console.log('Needs more fraction practice!');
+}
+```
+
+### Get Top Priority Concepts
+
+```typescript
+const struggling = await getConceptsNeedingReinforcement(42, undefined, 5);
+
+struggling.forEach((concept, index) => {
+  console.log(`${index + 1}. ${concept.conceptName}: ${concept.masteryLevel}%`);
+});
+```
+
+### Generate Mastery Report
+
+```typescript
+const summary = await getMasterySummary(42);
+
+console.log(`Overall Progress: ${summary.masteredConcepts}/${summary.totalConcepts} concepts mastered`);
+console.log(`Average Mastery: ${summary.averageMastery.toFixed(1)}%`);
+console.log(`Needs Practice: ${summary.needsReinforcementCount} concepts`);
+```
+
+## Related Features
+
+<CardGroup cols={3}>
+  <Card title="Concept Tracking" icon="brain" href="/features/concept-tracking">
+    How concepts are identified and tracked
+  </Card>
+  <Card title="Adaptive Learning" icon="chart-line" href="/features/adaptive-learning">
+    Using mastery data for personalized content
+  </Card>
+  <Card title="Reports" icon="chart-bar" href="/features/reports">
+    Visual mastery analytics for parents
+  </Card>
+</CardGroup>

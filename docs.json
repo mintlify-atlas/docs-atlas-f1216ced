@@ -1,122 +1,127 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Sunschool",
+  "theme": "almond",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#4A90D9",
+    "light": "#FFD93D",
+    "dark": "#2C5F8D"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/allonethingxyz/sunschool"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/allonethingxyz/sunschool"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Get Started",
         "groups": [
           {
-            "group": "Getting started",
-            "pages": [
-              "index",
-              "quickstart",
-              "development"
-            ]
+            "group": "Introduction",
+            "pages": ["introduction", "quickstart"]
           },
           {
-            "group": "Customization",
-            "pages": [
-              "essentials/settings",
-              "essentials/navigation"
-            ]
-          },
-          {
-            "group": "Writing content",
-            "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
-            ]
+            "group": "Setup",
+            "pages": ["installation", "configuration", "first-steps"]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "For Parents",
         "groups": [
           {
-            "group": "API documentation",
-            "pages": [
-              "api-reference/introduction"
-            ]
+            "group": "Parent Guide",
+            "pages": ["parents/overview", "parents/dashboard", "parents/adding-children"]
           },
           {
-            "group": "Endpoint examples",
-            "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
-            ]
+            "group": "Managing Learning",
+            "pages": ["parents/progress-tracking", "parents/rewards-system", "parents/learning-goals"]
+          },
+          {
+            "group": "Advanced",
+            "pages": ["parents/database-sync", "parents/data-export"]
+          }
+        ]
+      },
+      {
+        "tab": "For Learners",
+        "groups": [
+          {
+            "group": "Learning Experience",
+            "pages": ["learners/overview", "learners/lessons", "learners/quizzes"]
+          },
+          {
+            "group": "Gamification",
+            "pages": ["learners/achievements", "learners/points-rewards", "learners/goals"]
+          },
+          {
+            "group": "Progress",
+            "pages": ["learners/knowledge-graph", "learners/concept-mastery"]
+          }
+        ]
+      },
+      {
+        "tab": "Features",
+        "groups": [
+          {
+            "group": "Core Features",
+            "pages": ["features/ai-tutoring", "features/adaptive-learning", "features/grade-levels"]
+          },
+          {
+            "group": "Gamification",
+            "pages": ["features/points-system", "features/achievements", "features/rewards"]
+          },
+          {
+            "group": "Analytics",
+            "pages": ["features/concept-tracking", "features/mastery-system", "features/reports"]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": ["api/authentication", "api/user-management"]
+          },
+          {
+            "group": "Learners & Lessons",
+            "pages": ["api/learners", "api/lessons", "api/quizzes"]
+          },
+          {
+            "group": "Gamification",
+            "pages": ["api/points", "api/achievements", "api/rewards"]
+          },
+          {
+            "group": "Analytics",
+            "pages": ["api/progress", "api/reports", "api/export"]
+          }
+        ]
+      },
+      {
+        "tab": "Self-Hosting",
+        "groups": [
+          {
+            "group": "Deployment",
+            "pages": ["self-hosting/overview", "self-hosting/requirements", "self-hosting/environment"]
+          },
+          {
+            "group": "Configuration",
+            "pages": ["self-hosting/database", "self-hosting/ai-providers", "self-hosting/security"]
+          },
+          {
+            "group": "Operations",
+            "pages": ["self-hosting/migrations", "self-hosting/monitoring", "self-hosting/troubleshooting"]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

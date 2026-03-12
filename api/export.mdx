@@ -1,0 +1,201 @@
+---
+title: 'Data Export'
+description: 'Export learner data for portability'
+icon: 'download'
+---
+
+## Export Learner Data
+
+<Note>
+  **Authentication Required:** PARENT or ADMIN role
+</Note>
+
+```bash GET /api/export
+curl -X GET "https://api.sunschool.xyz/api/export?learnerId=3" \
+  -H "Authorization: Bearer {token}" \
+  -O learner-data.json
+```
+
+<ParamField query="learnerId" type="string" required>
+  Learner ID to export data for
+</ParamField>
+
+### Authorization
+
+- **PARENT**: Can export data for their children only
+- **ADMIN**: Can export data for any learner
+
+<Warning>
+  This endpoint is designed for data portability and compliance. It exports up to 1,000 lessons and all associated data.
+</Warning>
+
+---
+
+## Response Format
+
+The response is a JSON file with the following structure:
+
+<ResponseField name="learner" type="object">
+  Learner user object (password removed)
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">
+      User ID
+    </ResponseField>
+    <ResponseField name="username" type="string">
+      Username
+    </ResponseField>
+    <ResponseField name="email" type="string">
+      Email address
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Full name
+    </ResponseField>
+    <ResponseField name="role" type="string">
+      User role (LEARNER)
+    </ResponseField>
+    <ResponseField name="parentId" type="number">
+      Parent user ID
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="profile" type="object">
+  Complete learner profile including grade level, subjects, and knowledge graph
+</ResponseField>
+
+<ResponseField name="lessons" type="array">
+  Array of up to 1,000 lesson records with full specifications and scores
+</ResponseField>
+
+<ResponseField name="achievements" type="array">
+  Array of all earned achievements
+</ResponseField>
+
+<ResponseField name="exportDate" type="string">
+  ISO timestamp when the export was generated
+</ResponseField>
+
+<ResponseField name="exportedBy" type="number">
+  User ID of the person who requested the export
+</ResponseField>
+
+---
+
+## Response Headers
+
+The response includes special headers to trigger a file download:
+
+```http
+Content-Disposition: attachment; filename="learner-data-3-2024-01-15.json"
+Content-Type: application/json
+```
+
+The filename format is: `learner-data-{learnerId}-{date}.json`
+
+---
+
+## Example Export
+
+```json Export Example
+{
+  "learner": {
+    "id": 3,
+    "username": "alice-123456",
+    "email": "alice@example.com",
+    "name": "Alice",
+    "role": "LEARNER",
+    "parentId": 1
+  },
+  "profile": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "userId": "3",
+    "gradeLevel": 5,
+    "graph": {
+      "nodes": [],
+      "edges": []
+    },
+    "subjects": ["Math", "Reading", "Science"],
+    "subjectPerformance": {
+      "Math": {"averageScore": 85, "lessonsCompleted": 12}
+    },
+    "recommendedSubjects": ["History"],
+    "strugglingAreas": ["Fractions"],
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  },
+  "lessons": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "learnerId": 3,
+      "moduleId": "custom-1705320600000",
+      "status": "DONE",
+      "subject": "Math",
+      "category": "STEM",
+      "difficulty": "beginner",
+      "score": 85,
+      "spec": {
+        "topic": "Addition",
+        "learningObjectives": ["Understand basic addition"],
+        "questions": [
+          {
+            "question": "What is 2 + 2?",
+            "choices": ["3", "4", "5", "6"],
+            "correctIndex": 1,
+            "explanation": "2 + 2 equals 4"
+          }
+        ]
+      },
+      "imagePaths": [],
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "achievements": [
+    {
+      "id": "ach_123456",
+      "learnerId": "3",
+      "type": "FIRST_PERFECT",
+      "payload": {
+        "type": "FIRST_PERFECT",
+        "title": "Perfect Score!",
+        "description": "Got 100% on your first quiz",
+        "icon": "🌟"
+      },
+      "earnedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "exportDate": "2024-01-15T12:00:00.000Z",
+  "exportedBy": 1
+}
+```
+
+---
+
+## Error Codes
+
+- **400** - learnerId is required
+- **401** - Unauthorized
+- **403** - Forbidden (parent can only export their own children)
+- **404** - Learner not found
+
+---
+
+## Use Cases
+
+### Data Portability
+
+Export learner data to move to another system or for archival purposes.
+
+### Compliance
+
+Provide data export for GDPR, COPPA, or other privacy regulation compliance.
+
+### Backup
+
+Create periodic backups of learner progress and achievements.
+
+### Analysis
+
+Export data for offline analysis or reporting in external tools.
+
+<Note>
+  The export includes sensitive learner data. Ensure it's stored and transmitted securely.
+</Note>

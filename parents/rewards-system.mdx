@@ -1,0 +1,538 @@
+---
+title: Rewards System
+description: Create and manage rewards to motivate your children's learning
+---
+
+# Parent Rewards Management
+
+Sunschool's rewards system allows parents to create custom incentives that children can earn through learning. Children earn points by completing lessons and can save toward rewards they want.
+
+## Overview
+
+The rewards system has three main components:
+
+1. **Reward Catalog** - Rewards you create and manage
+2. **Redemption Requests** - When children want to cash out
+3. **Settings** - Special scoring modes and configurations
+
+Access the rewards center at `/rewards` from your parent dashboard.
+
+From `parent-rewards-page.tsx:306-406`:
+
+```typescript
+const ParentRewardsPage: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<Tab>('rewards');
+  
+  // Three tabs: rewards, redemptions, settings
+  
+  return (
+    <SafeAreaView>
+      <View style={styles.header}>
+        <Gift size={22} color={theme.colors.primary} />
+        <Text style={styles.headerTitle}>Rewards Center</Text>
+      </View>
+      
+      <View style={styles.tabs}>
+        {/* Tab navigation */}
+      </View>
+    </SafeAreaView>
+  );
+};
+```
+
+## Creating Rewards
+
+### The Reward Form
+
+Click "Add Reward" to open the creation form.
+
+From `parent-rewards-page.tsx:38-135`:
+
+```typescript
+const RewardForm: React.FC<RewardFormProps> = ({ initial, onSave, onCancel, isSaving }) => {
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [description, setDescription] = useState(initial?.description ?? '');
+  const [tokenCost, setTokenCost] = useState(String(initial?.tokenCost ?? 10));
+  const [category, setCategory] = useState(initial?.category ?? 'GENERAL');
+  const [emoji, setEmoji] = useState(initial?.imageEmoji ?? '🎁');
+  const [color, setColor] = useState(initial?.color ?? '#4A90D9');
+  const [isActive, setIsActive] = useState(initial?.isActive ?? true);
+  
+  const handleSave = () => {
+    if (!title.trim()) return;
+    onSave({
+      title: title.trim(),
+      description: description.trim() || null,
+      tokenCost: Number(tokenCost) || 10,
+      category,
+      imageEmoji: emoji,
+      color,
+      isActive
+    });
+  };
+};
+```
+
+### Required Fields
+
+<Steps>
+  <Step title="Choose an Icon">
+    Select an emoji to represent the reward
+    
+    Available emojis from `parent-rewards-page.tsx:32`:
+    ```typescript
+    const EMOJIS = ['🎁','⭐','🏆','🎮','🍦','🎬','🎨','📚','🚀','🦋','🌟','🎪','🎯','🛹','🎸','🎀'];
+    ```
+  </Step>
+  
+  <Step title="Select a Color">
+    Pick a color theme for the reward card
+    
+    From `parent-rewards-page.tsx:33`:
+    ```typescript
+    const COLORS = ['#4A90D9','#6BCB77','#FF8F00','#EF5350','#AB47BC','#00ACC1','#FF6B6B','#FFD93D'];
+    ```
+  </Step>
+  
+  <Step title="Enter Title">
+    Give the reward a descriptive name
+    
+    Examples:
+    - "Movie Night"
+    - "30 Minutes Screen Time"
+    - "Ice Cream Trip"
+    - "Choose Dinner"
+  </Step>
+  
+  <Step title="Set Point Cost">
+    Determine how many points are required
+    
+    ```typescript
+    tokenCost: Number(tokenCost) || 10
+    ```
+    
+    <Info>
+    Typical point costs range from 10-100 depending on the reward value. Children earn 1 point per correct quiz answer by default.
+    </Info>
+  </Step>
+  
+  <Step title="Choose Category">
+    Classify the reward type
+    
+    From `parent-rewards-page.tsx:34`:
+    ```typescript
+    const CATEGORIES = [
+      'GENERAL',
+      'SCREEN_TIME',
+      'FOOD_TREAT',
+      'OUTING',
+      'TOY_GAME',
+      'EXPERIENCE',
+      'OTHER'
+    ];
+    ```
+  </Step>
+</Steps>
+
+### Optional Settings
+
+- **Description** - Add details about the reward
+- **Active Status** - Toggle whether children can see and save for this reward
+
+From `parent-rewards-page.tsx:119-122`:
+
+```typescript
+<View style={styles.switchRow}>
+  <Text style={styles.label}>Active</Text>
+  <Switch value={isActive} onValueChange={setIsActive} />
+</View>
+```
+
+## Managing the Reward Catalog
+
+### Reward Cards
+
+Each reward displays as a card with:
+
+From `parent-rewards-page.tsx:138-199`:
+
+```typescript
+const RewardCard: React.FC<{ reward: Reward }> = ({ reward, onEdit, onDelete, learnerProgress }) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  return (
+    <View style={[styles.card, { borderLeftColor: reward.color, borderLeftWidth: 4 }]}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.emojiCircle, { backgroundColor: reward.color + '20' }]}>
+          <Text style={{ fontSize: 28 }}>{reward.imageEmoji}</Text>
+        </View>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.cardTitle}>{reward.title}</Text>
+          <Text style={styles.cardSub}>
+            {reward.tokenCost} pts · {reward.category.replace('_', ' ')} · {reward.currentRedemptions} redeemed
+          </Text>
+          {!reward.isActive && (
+            <View style={styles.inactiveBadge}>
+              <Text style={styles.inactiveBadgeText}>Inactive</Text>
+            </View>
+          )}
+        </View>
+        <TouchableOpacity onPress={onEdit} style={styles.iconBtn}>
+          <Edit2 size={16} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onDelete} style={styles.iconBtn}>
+          <Trash2 size={16} color="#EF5350" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+```
+
+### Learner Progress Tracking
+
+Reward cards can show how much each child has saved:
+
+From `parent-rewards-page.tsx:174-196`:
+
+```typescript
+{learnerProgress && learnerProgress.length > 0 && (
+  <TouchableOpacity style={styles.progressToggle} onPress={() => setExpanded(e => !e)}>
+    <Text style={styles.progressToggleText}>
+      Learner progress ({learnerProgress.length})
+    </Text>
+    <ChevronDown size={14} color={theme.colors.primary} />
+  </TouchableOpacity>
+)}
+
+{expanded && learnerProgress?.map((lp, i) => (
+  <View key={i} style={styles.progressRow}>
+    <Text style={styles.progressName}>{lp.name}</Text>
+    <View style={styles.progressBar}>
+      <View style={[styles.progressFill, {
+        width: `${Math.min(100, Math.round((lp.saved / reward.tokenCost) * 100))}%`,
+        backgroundColor: reward.color,
+      }]} />
+    </View>
+    <Text style={styles.progressPts}>
+      {lp.saved}/{reward.tokenCost}
+    </Text>
+  </View>
+))}
+```
+
+<Info>
+Expand a reward card to see how close each child is to earning it. This helps you understand what motivates each child.
+</Info>
+
+## Handling Redemption Requests
+
+When a child has enough points saved, they can request to redeem a reward.
+
+### The Redemptions Tab
+
+From `parent-rewards-page.tsx:440-458`:
+
+```typescript
+{activeTab === 'redemptions' && (
+  <>
+    {loadingRedemptions ? (
+      <ActivityIndicator color={theme.colors.primary} />
+    ) : redemptions.length === 0 ? (
+      <View style={styles.empty}>
+        <Text style={{ fontSize: 48 }}>📭</Text>
+        <Text style={styles.emptyText}>No redemption requests yet.</Text>
+      </View>
+    ) : (
+      redemptions.map(r => (
+        <RedemptionCard key={r.id} r={r}
+          onApprove={notes => approveMutation.mutate({ id: r.id, notes })}
+          onReject={notes => rejectMutation.mutate({ id: r.id, notes })}
+          isProcessing={approveMutation.isPending || rejectMutation.isPending}
+        />
+      ))
+    )}
+  </>
+)}
+```
+
+### Redemption Cards
+
+From `parent-rewards-page.tsx:202-263`:
+
+```typescript
+const RedemptionCard: React.FC<{ r: Redemption }> = ({ r, onApprove, onReject, isProcessing }) => {
+  const [notes, setNotes] = useState('');
+  
+  return (
+    <View style={[styles.card, { borderLeftColor: r.rewardColor, borderLeftWidth: 4 }]}>
+      <View style={styles.cardHeader}>
+        <Text style={{ fontSize: 28 }}>{r.rewardEmoji}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>
+            {r.learnerName} → {r.rewardTitle}
+          </Text>
+          <Text style={styles.cardSub}>
+            {r.tokensSpent} pts · {new Date(r.requestedAt).toLocaleDateString()}
+          </Text>
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor:
+          r.status === 'APPROVED' ? '#E8F5E9' :
+          r.status === 'REJECTED' ? '#FFEBEE' : '#FFF8E1' }]}>
+          <Text style={{ color:
+            r.status === 'APPROVED' ? '#2E7D32' :
+            r.status === 'REJECTED' ? '#C62828' : '#F57F17' }}>
+            {r.status}
+          </Text>
+        </View>
+      </View>
+
+      {r.status === 'PENDING' && (
+        <>
+          <TextInput
+            style={styles.input}
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Optional note for learner"
+          />
+          <View style={styles.redemptionActions}>
+            <TouchableOpacity
+              style={[styles.btn, { backgroundColor: '#E8F5E9' }]}
+              onPress={() => onApprove(notes)}
+              disabled={isProcessing}
+            >
+              <CheckCircle size={16} color="#2E7D32" />
+              <Text style={{ color: '#2E7D32' }}>Approve</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.btn, { backgroundColor: '#FFEBEE' }]}
+              onPress={() => onReject(notes)}
+              disabled={isProcessing}
+            >
+              <XCircle size={16} color="#C62828" />
+              <Text style={{ color: '#C62828' }}>Reject</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+    </View>
+  );
+};
+```
+
+### Approving Redemptions
+
+<Steps>
+  <Step title="Review the Request">
+    Check which child is requesting which reward and how many points they're spending.
+  </Step>
+  
+  <Step title="Add a Note (Optional)">
+    Include a message to your child:
+    - "Great job saving up!"
+    - "We'll do this on Saturday"
+    - "Pick a movie you'd like to watch"
+  </Step>
+  
+  <Step title="Approve or Reject">
+    Click the appropriate button. Approved redemptions:
+    - Deduct the points from saved balance
+    - Mark the redemption as approved
+    - Notify the child
+  </Step>
+</Steps>
+
+<Warning>
+Rejecting a redemption refunds the points back to the child's available balance, so they can save for a different reward or try again later.
+</Warning>
+
+## Advanced Settings
+
+### Double-or-Loss Mode
+
+From `parent-rewards-page.tsx:266-300`:
+
+```typescript
+const LearnerSettingsCard: React.FC<{ learner: Learner }> = ({ learner }) => {
+  const { data: settings } = useQuery({
+    queryKey: [`/api/learner-settings/${learner.id}`],
+    queryFn: () => apiRequest('GET', `/api/learner-settings/${learner.id}`).then(r => r.data),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiRequest('PUT', `/api/learner-settings/${learner.id}/double-or-loss`, { enabled }).then(r => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/learner-settings/${learner.id}`] }),
+  });
+
+  const enabled = settings?.doubleOrLossEnabled ?? false;
+
+  return (
+    <View style={styles.settingCard}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cardTitle}>{learner.name}</Text>
+        <Text style={styles.cardSub}>
+          Double-or-Loss mode: {enabled ? '⚡ ON' : 'Off'}
+        </Text>
+        <Text style={styles.cardDesc}>
+          {enabled ? '2× points for correct, -1 for wrong answers' : 'Standard scoring (1 pt per correct answer)'}
+        </Text>
+      </View>
+      <Switch
+        value={enabled}
+        onValueChange={v => toggleMutation.mutate(v)}
+        trackColor={{ true: '#FF8F00' }}
+      />
+    </View>
+  );
+};
+```
+
+#### How Double-or-Loss Works
+
+<CardGroup cols={2}>
+  <Card title="Correct Answers" icon="check">
+    Earn **2× points** (2 points instead of 1)
+    
+    Rewards faster progress for high performers
+  </Card>
+  
+  <Card title="Wrong Answers" icon="x">
+    Lose **1 point** per incorrect answer
+    
+    Adds stakes and encourages careful thinking
+  </Card>
+</CardGroup>
+
+<Warning>
+Double-or-Loss mode can be demotivating for struggling learners. Use it only for:
+
+- Older children who enjoy challenges
+- Subjects where the child is already confident
+- Short-term motivation boosts
+- Children who explicitly request it
+</Warning>
+
+## Data and Mutations
+
+### Fetching Rewards
+
+From `parent-rewards-page.tsx:313-316`:
+
+```typescript
+const { data: rewards = [], isLoading: loadingRewards } = useQuery<Reward[]>({
+  queryKey: ['/api/rewards'],
+  queryFn: () => apiRequest('GET', '/api/rewards').then(r => r.data),
+});
+```
+
+### Creating/Updating Rewards
+
+From `parent-rewards-page.tsx:350-359`:
+
+```typescript
+const createMutation = useMutation({
+  mutationFn: (data: any) => apiRequest('POST', '/api/rewards', data).then(r => r.data),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/rewards'] });
+    setShowForm(false);
+  },
+});
+
+const updateMutation = useMutation({
+  mutationFn: ({ id, ...data }: any) => apiRequest('PUT', `/api/rewards/${id}`, data).then(r => r.data),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/rewards'] });
+    setEditingReward(null);
+  },
+});
+```
+
+### Deleting Rewards
+
+From `parent-rewards-page.tsx:361-364`:
+
+```typescript
+const deleteMutation = useMutation({
+  mutationFn: (id: string) => apiRequest('DELETE', `/api/rewards/${id}`).then(r => r.data),
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/rewards'] }),
+});
+```
+
+<Info>
+When you delete a reward, any points children have saved toward it are automatically refunded to their available balance.
+</Info>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Start Small">
+    Begin with inexpensive rewards (10-25 points) so children experience success early. Add bigger rewards as they get used to the system.
+  </Accordion>
+  
+  <Accordion title="Mix Reward Types">
+    Offer variety:
+    - Quick wins (ice cream, extra screen time)
+    - Medium goals (toy, game, outing)
+    - Long-term prizes (special trip, big purchase)
+  </Accordion>
+  
+  <Accordion title="Let Children Choose">
+    Ask your children what rewards motivate them. The system works best when rewards align with their interests.
+  </Accordion>
+  
+  <Accordion title="Be Consistent">
+    Approve redemptions promptly and follow through on rewards. This builds trust in the system.
+  </Accordion>
+  
+  <Accordion title="Celebrate Progress">
+    Use the progress tracking feature to recognize when children are getting close to their goals.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Child can't see a reward">
+    Check that:
+    1. The reward is marked as "Active"
+    2. The child has refreshed their page
+    3. The reward wasn't just created (may take a moment to sync)
+  </Accordion>
+  
+  <Accordion title="Points not saving correctly">
+    Verify:
+    1. The child actually completed the save action
+    2. They had enough available points
+    3. The reward is still active
+    4. No errors occurred (check console)
+  </Accordion>
+  
+  <Accordion title="Redemption stuck pending">
+    If a redemption won't approve:
+    1. Refresh the page
+    2. Check your internet connection
+    3. Try approving again
+    4. Contact support if issue persists
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Learning Goals" icon="target" href="/parents/learning-goals">
+    See how children interact with the rewards system
+  </Card>
+  
+  <Card title="Track Progress" icon="chart-line" href="/parents/progress-tracking">
+    Monitor points earned and lessons completed
+  </Card>
+  
+  <Card title="View Dashboard" icon="gauge" href="/parents/dashboard">
+    Return to the main parent view
+  </Card>
+  
+  <Card title="Export Data" icon="download" href="/parents/data-export">
+    Download reward and redemption history
+  </Card>
+</CardGroup>

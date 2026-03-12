@@ -1,0 +1,628 @@
+---
+title: Database Setup
+description: PostgreSQL setup, migrations, and schema overview
+icon: database
+---
+
+## PostgreSQL Setup
+
+Sunschool uses PostgreSQL with advanced features including JSONB columns, array types, and partial unique indexes.
+
+### Connection Configuration
+
+From `server/db.ts`, Sunschool uses Neon's serverless driver with connection pooling:
+
+```typescript
+import { neon, neonConfig, Pool } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-http';
+
+// WebSocket connection for Neon
+const sql = neon(DATABASE_URL);
+export const db = drizzle(sql);
+
+// Pool for direct queries
+export const pool = new Pool({ 
+  connectionString: DATABASE_URL,
+  max: 10  // Connection pool size
+});
+```
+
+### Database URL Format
+
+The `DATABASE_URL` environment variable must include:
+
+```
+postgresql://[user]:[password]@[host]:[port]/[database]?[options]
+```
+
+**Examples:**
+
+<Tabs>
+  <Tab title="Neon Serverless">
+    ```env
+    DATABASE_URL="postgresql://user:pass@ep-cool-name-123456.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    ```
+    
+    - SSL required (`sslmode=require`)
+    - WebSocket connections supported
+    - Automatic connection pooling
+  </Tab>
+  <Tab title="Local PostgreSQL">
+    ```env
+    DATABASE_URL="postgresql://sunschool:password@localhost:5432/sunschool"
+    ```
+    
+    - No SSL for local development
+    - Standard TCP connections
+  </Tab>
+  <Tab title="Railway PostgreSQL">
+    ```env
+    DATABASE_URL="postgresql://postgres:password@containers-us-west-1.railway.app:5432/railway"
+    ```
+    
+    - Internal Railway networking
+    - SSL typically enabled
+  </Tab>
+</Tabs>
+
+### SSL Configuration
+
+From `server/config/env.ts`:
+
+```typescript
+export const DATABASE_SSL = getEnv('DATABASE_SSL', 'true') === 'true';
+```
+
+<Warning>
+  For production deployments with remote databases, always enable SSL:
+  ```env
+  DATABASE_SSL=true
+  ```
+</Warning>
+
+## Database Initialization
+
+### Create Database
+
+<Tabs>
+  <Tab title="Neon Dashboard">
+    1. Log in to [neon.tech](https://neon.tech)
+    2. Click "Create Project"
+    3. Choose region (us-east-2 recommended)
+    4. Copy connection string
+    5. Database is ready immediately
+  </Tab>
+  <Tab title="Local PostgreSQL">
+    ```bash
+    # Create user
+    sudo -u postgres createuser sunschool --pwprompt
+    # Enter password when prompted
+    
+    # Create database
+    sudo -u postgres createdb sunschool --owner=sunschool
+    
+    # Test connection
+    psql -U sunschool -d sunschool -c "SELECT version();"
+    ```
+  </Tab>
+  <Tab title="Docker">
+    ```bash
+    docker run -d \
+      --name sunschool-postgres \
+      -e POSTGRES_USER=sunschool \
+      -e POSTGRES_PASSWORD=secure_password \
+      -e POSTGRES_DB=sunschool \
+      -p 5432:5432 \
+      -v sunschool-data:/var/lib/postgresql/data \
+      postgres:15-alpine
+    
+    # Verify
+    docker exec sunschool-postgres psql -U sunschool -c "SELECT version();"
+    ```
+  </Tab>
+</Tabs>
+
+### Test Connection
+
+```bash
+# Using psql
+psql "$DATABASE_URL" -c "SELECT current_database();"
+
+# Using Node.js
+node -e "
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.query('SELECT NOW()', (err, res) => {
+  console.log(err ? err : res.rows[0]);
+  pool.end();
+});
+"
+```
+
+## Database Migrations
+
+### Auto-Migrations on Startup
+
+From `ENGINEERING.md`:
+
+> Migrations run automatically on startup. Manual commands available for debugging.
+
+The server applies pending migrations when it starts:
+
+```typescript
+// server/index.ts (conceptual)
+import { migrate } from 'drizzle-orm/neon-http/migrator';
+
+try {
+  await migrate(db, { migrationsFolder: './drizzle/migrations' });
+  console.log('Migrations applied successfully');
+} catch (error) {
+  console.error('Migration failed:', error);
+  // Server continues despite migration failures
+}
+```
+
+### Manual Migration Commands
+
+From `package.json`:
+
+```json
+{
+  "scripts": {
+    "migrate": "ts-node --transpile-only scripts/migrate.ts",
+    "db:push": "drizzle-kit push:pg",
+    "db:seed": "ts-node scripts/seed.ts"
+  }
+}
+```
+
+**Run migrations manually:**
+
+```bash
+# Apply pending migrations
+npm run migrate
+
+# Push schema changes without generating migration files
+npm run db:push
+
+# Seed database with test data (development only)
+npm run db:seed
+```
+
+### Migration Files Location
+
+From `ENGINEERING.md`:
+
+```
+drizzle/migrations/
+├── 0000_initial_migration.sql
+├── 0001_db_sync_configs.sql
+├── 0002_gamification.sql
+├── 0003_question_history.sql
+├── 0003_token_gamification.sql
+├── 0004_quiz_answers.sql
+├── 0005_concept_mastery.sql
+├── 0006_schema_alignment.sql
+├── 0007_rewards_system.sql
+└── 0008_unify_spec.sql
+```
+
+Migrations are numbered and applied in order. Each migration is idempotent.
+
+## Schema Overview
+
+From `shared/schema.ts`:
+
+### Core Tables
+
+#### users
+
+```sql
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR UNIQUE,
+  username TEXT UNIQUE,
+  name TEXT,
+  role user_role DEFAULT 'LEARNER',  -- ENUM: ADMIN, PARENT, LEARNER
+  password TEXT,
+  parent_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**TypeScript schema:**
+
+```typescript
+export const userRoleEnum = pgEnum("user_role", ["ADMIN", "PARENT", "LEARNER"]);
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: varchar("email").unique(),
+  username: text("username").unique(),
+  name: text("name"),
+  role: userRoleEnum("role").default("LEARNER"),
+  password: text("password"),
+  parentId: integer("parent_id").references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+```
+
+#### learner_profiles
+
+```typescript
+export const learnerProfiles = pgTable("learner_profiles", {
+  id: text("id").primaryKey().notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  gradeLevel: integer("grade_level").notNull(),
+  graph: json("graph").$type<{ nodes: any[], edges: any[] }>(),
+  subjects: json("subjects").$type<string[]>().default(['Math', 'Science']),
+  subjectPerformance: json("subject_performance").$type<Record<string, {
+    score: number,
+    lessonCount: number,
+    lastAttempted: string,
+    masteryLevel: 'beginner' | 'intermediate' | 'advanced'
+  }>>().default({}),
+  recommendedSubjects: json("recommended_subjects").$type<string[]>().default([]),
+  strugglingAreas: json("struggling_areas").$type<string[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+```
+
+**JSONB usage:**
+- `graph` - Knowledge graph nodes and edges
+- `subjects` - Array of subject interests
+- `subjectPerformance` - Per-subject analytics
+
+#### lessons
+
+```typescript
+export const lessonStatusEnum = pgEnum("lesson_status", ["QUEUED", "ACTIVE", "DONE"]);
+
+export const lessons = pgTable("lessons", {
+  id: text("id").primaryKey().notNull(),
+  learnerId: integer("learner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  moduleId: text("module_id"),
+  status: lessonStatusEnum("status").notNull().default("QUEUED"),
+  subject: text("subject"),
+  category: text("category"),
+  difficulty: text("difficulty", { enum: ["beginner", "intermediate", "advanced"] }).default("beginner"),
+  imagePaths: json("image_paths").$type<{
+    path: string;
+    alt: string;
+    description: string;
+  }[]>(),
+  spec: json("spec").$type<EnhancedLessonSpec>(),
+  score: integer("score"),
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+```
+
+**Special constraint:** Partial unique index ensures only one ACTIVE lesson per learner:
+
+```sql
+CREATE UNIQUE INDEX idx_one_active_per_learner 
+ON lessons(learner_id) 
+WHERE status = 'ACTIVE';
+```
+
+#### quiz_answers
+
+```typescript
+export const quizAnswers = pgTable("quiz_answers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  learnerId: integer("learner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  lessonId: text("lesson_id").notNull().references(() => lessons.id, { onDelete: "cascade" }),
+  questionIndex: integer("question_index").notNull(),
+  questionText: text("question_text").notNull(),
+  questionHash: varchar("question_hash", { length: 64 }).notNull(),
+  userAnswer: integer("user_answer").notNull(),
+  correctAnswer: integer("correct_answer").notNull(),
+  isCorrect: boolean("is_correct").notNull(),
+  conceptTags: text("concept_tags").array(),  // PostgreSQL array type
+  answeredAt: timestamp("answered_at").defaultNow(),
+}, (table) => [
+  index("idx_learner_answers").on(table.learnerId, table.answeredAt),
+  index("idx_question_hash").on(table.questionHash),
+]);
+```
+
+**Indexes:**
+- `idx_learner_answers` - Fast learner history queries
+- `idx_question_hash` - Question deduplication (SHA-256)
+
+### Gamification Tables
+
+From `ENGINEERING.md`:
+
+#### points_ledger
+
+```sql
+CREATE TABLE points_ledger (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  learner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  amount INTEGER NOT NULL,
+  source_type TEXT NOT NULL,  -- QUIZ_CORRECT, LESSON_COMPLETE, ACHIEVEMENT, etc.
+  source_id TEXT,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**Source types:**
+- `QUIZ_CORRECT` - Points for correct answers
+- `LESSON_COMPLETE` - Completion bonuses
+- `ACHIEVEMENT` - Achievement rewards
+- `REDEMPTION` - Points spent on rewards
+- `ADMIN_ADJUST` - Manual adjustments
+- `DOUBLE_OR_LOSS_DEDUCTION` - Risk mode deductions
+- `GOAL_DELEGATION` - Goal-based rewards
+
+#### rewards
+
+```sql
+CREATE TABLE rewards (
+  id UUID PRIMARY KEY,
+  parent_id INTEGER REFERENCES users(id),
+  title TEXT NOT NULL,
+  description TEXT,
+  token_cost INTEGER NOT NULL,
+  category TEXT,
+  is_active BOOLEAN DEFAULT true,
+  max_redemptions INTEGER,
+  current_redemptions INTEGER DEFAULT 0,
+  image_emoji TEXT,
+  color TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### reward_redemptions
+
+```sql
+CREATE TABLE reward_redemptions (
+  id UUID PRIMARY KEY,
+  learner_id INTEGER REFERENCES users(id),
+  reward_id UUID REFERENCES rewards(id),
+  tokens_spent INTEGER NOT NULL,
+  status TEXT DEFAULT 'PENDING',  -- PENDING, APPROVED, REJECTED
+  requested_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  parent_notes TEXT,
+  learner_notes TEXT
+);
+```
+
+### Analytics Tables
+
+#### concept_mastery
+
+```typescript
+export const conceptMastery = pgTable("concept_mastery", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  learnerId: integer("learner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  conceptName: text("concept_name").notNull(),
+  subject: text("subject").notNull(),
+  correctCount: integer("correct_count").notNull().default(0),
+  totalCount: integer("total_count").notNull().default(0),
+  masteryLevel: integer("mastery_level").notNull().default(0), // 0-100
+  lastTested: timestamp("last_tested").defaultNow(),
+  needsReinforcement: boolean("needs_reinforcement").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_learner_mastery").on(table.learnerId, table.subject),
+  index("idx_needs_reinforcement").on(table.learnerId, table.needsReinforcement),
+]);
+```
+
+**Purpose:** Track per-concept accuracy for adaptive learning and spaced repetition.
+
+## Schema Updates
+
+From `ENGINEERING.md`:
+
+> Migrations auto-run on startup; failures don't block server start
+
+### Creating New Migrations
+
+```bash
+# Generate migration from schema changes
+npx drizzle-kit generate:pg
+
+# Review generated SQL
+cat drizzle/migrations/0009_new_feature.sql
+
+# Apply manually (or restart server)
+npm run migrate
+```
+
+### Migration Safety
+
+<Warning>
+  Always backup your database before applying migrations in production:
+  
+  ```bash
+  # Neon backup (automatic)
+  # Local backup
+  pg_dump $DATABASE_URL > backup_$(date +%Y%m%d_%H%M%S).sql
+  ```
+</Warning>
+
+From the server startup logic:
+
+```typescript
+try {
+  await migrate(db, { migrationsFolder: './drizzle/migrations' });
+  console.log('✅ Migrations applied');
+} catch (error) {
+  console.error('⚠️ Migration failed (server continues):', error);
+  // Server starts anyway to avoid downtime
+}
+```
+
+## Connection Pooling
+
+From `server/db.ts`:
+
+```typescript
+export const pool = new Pool({ 
+  connectionString: DATABASE_URL,
+  max: 10,  // Maximum connections
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+// Keep-alive for Neon serverless
+setInterval(() => {
+  pool.query('SELECT 1');
+}, 120000); // 2 minutes
+```
+
+**Connection limits:**
+- Neon Free: 100 connections
+- Neon Pro: 1000 connections
+- Local PostgreSQL: Configurable in `postgresql.conf`
+
+## Health Checks
+
+From `server/auth.ts`:
+
+```typescript
+app.get("/api/healthcheck", asyncHandler(async (req, res) => {
+  try {
+    const result = await db.select({ count: count() }).from(users);
+    const userCount = result[0]?.count || 0;
+    
+    return res.json({ 
+      status: "ok", 
+      db: "connected",
+      userCount 
+    });
+  } catch (error) {
+    return res.status(500).json({ 
+      status: "error",
+      message: "Database connection failed"
+    });
+  }
+}));
+```
+
+**Test health endpoint:**
+
+```bash
+curl http://localhost:5000/api/healthcheck
+# {"status":"ok","db":"connected","userCount":5}
+```
+
+Railway uses this endpoint for health monitoring (60s timeout, max 3 retries).
+
+## Troubleshooting
+
+### Connection Errors
+
+<AccordionGroup>
+  <Accordion title="ECONNREFUSED">
+    **Cause:** Database server not running or wrong host/port.
+    
+    **Fix:**
+    ```bash
+    # Check PostgreSQL is running
+    sudo systemctl status postgresql
+    
+    # Verify connection string
+    echo $DATABASE_URL
+    
+    # Test direct connection
+    psql "$DATABASE_URL" -c "SELECT 1;"
+    ```
+  </Accordion>
+  
+  <Accordion title="Authentication failed">
+    **Cause:** Wrong username or password in DATABASE_URL.
+    
+    **Fix:**
+    ```bash
+    # Reset password
+    sudo -u postgres psql
+    postgres=# ALTER USER sunschool WITH PASSWORD 'new_password';
+    
+    # Update .env
+    DATABASE_URL="postgresql://sunschool:new_password@localhost:5432/sunschool"
+    ```
+  </Accordion>
+  
+  <Accordion title="SSL required">
+    **Cause:** Remote database requires SSL, but connection string missing `sslmode`.
+    
+    **Fix:**
+    ```env
+    # Add to connection string
+    DATABASE_URL="...?sslmode=require"
+    
+    # Or set flag
+    DATABASE_SSL=true
+    ```
+  </Accordion>
+  
+  <Accordion title="Too many connections">
+    **Cause:** Connection pool exhausted.
+    
+    **Fix:**
+    ```typescript
+    // Increase pool size in server/db.ts
+    const pool = new Pool({ 
+      connectionString: DATABASE_URL,
+      max: 20  // Increase from 10
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Migration Errors
+
+<AccordionGroup>
+  <Accordion title="Migration already applied">
+    **Cause:** Migration file was applied but not recorded.
+    
+    **Fix:**
+    ```sql
+    -- Check migrations table
+    SELECT * FROM drizzle_migrations ORDER BY created_at DESC;
+    
+    -- Manually mark as applied if needed
+    INSERT INTO drizzle_migrations (hash, created_at) 
+    VALUES ('migration_hash', NOW());
+    ```
+  </Accordion>
+  
+  <Accordion title="Constraint violation">
+    **Cause:** Data doesn't match new schema constraints.
+    
+    **Fix:**
+    ```sql
+    -- Identify problematic rows
+    SELECT * FROM lessons WHERE status NOT IN ('QUEUED', 'ACTIVE', 'DONE');
+    
+    -- Fix data before re-running migration
+    UPDATE lessons SET status = 'DONE' WHERE status IS NULL;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="AI Providers" icon="robot" href="/self-hosting/ai-providers">
+    Configure OpenRouter, Perplexity, and Bittensor
+  </Card>
+  <Card title="Security" icon="shield" href="/self-hosting/security">
+    Set up authentication and access controls
+  </Card>
+  <Card title="Migrations" icon="code-branch" href="/self-hosting/migrations">
+    Deep dive into database migrations
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/self-hosting/monitoring">
+    Set up health checks and logging
+  </Card>
+</CardGroup>

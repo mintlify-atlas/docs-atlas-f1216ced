@@ -1,0 +1,614 @@
+---
+title: First Steps
+description: Navigate the Sunschool interface, manage learners, and understand the parent-learner workflow.
+---
+
+# First Steps
+
+After installing or signing up for Sunschool, follow this guide to get familiar with the interface and start teaching your kids.
+
+---
+
+## Accessing the Application
+
+### Hosted Instance
+
+Visit [sunschool.xyz](https://sunschool.xyz) and log in with your credentials.
+
+### Self-Hosted Instance
+
+Navigate to your server's URL:
+
+```bash
+http://localhost:5000
+# or
+https://your-domain.com
+```
+
+<Note>
+  The default port is `5000`. Change it via the `PORT` environment variable.
+</Note>
+
+---
+
+## First User Becomes Admin
+
+<Warning>
+  **The first user to register is automatically promoted to Admin**, regardless of the role selected during signup.
+</Warning>
+
+This auto-promotion ensures you have full system access on self-hosted installations.
+
+### How It Works
+
+From `server/routes.ts:87-92`:
+
+```typescript
+// Check if this is the first user being registered
+const userCountResult = await db.select({ count: count() }).from(users);
+const isFirstUser = userCountResult[0].count === 0;
+
+// If this is the first user, make them an admin regardless of the requested role
+const effectiveRole = isFirstUser ? "ADMIN" : role;
+```
+
+### Admin Capabilities
+
+As an admin, you have access to:
+
+- **User Management**: Create/edit/delete all users (admins, parents, learners)
+- **Lesson Management**: View/edit/delete all lessons
+- **System Settings**: Configure feature flags and global settings
+- **Full API Access**: All endpoints without permission restrictions
+
+<Note>
+  Most users will operate as **Parents**, not Admins. Create a new parent account for daily use and reserve the admin account for system administration.
+</Note>
+
+---
+
+## Creating Parent Accounts
+
+### Option 1: Register as Parent
+
+If you're not the first user, you can register directly as a **PARENT**:
+
+1. Navigate to `/auth`
+2. Select **Sign Up**
+3. Choose role: **PARENT**
+4. Fill in username, email, name, and password
+5. Accept the age disclaimer
+6. Submit
+
+You'll be redirected to the **Parent Dashboard** (`/dashboard`).
+
+### Option 2: Admin Creates Parent
+
+Admins can create parent accounts from the admin panel:
+
+1. Navigate to `/admin/users`
+2. Click **"Add User"**
+3. Select role: **PARENT**
+4. Fill in details and submit
+
+---
+
+## Adding Learners
+
+Learners are child accounts linked to a parent.
+
+### From the Parent Dashboard
+
+<Steps>
+  <Step title="Navigate to Dashboard">
+    Go to `/dashboard` (you're redirected here after login)
+  </Step>
+  <Step title="Click Add Child">
+    If you have no children, you'll see an inline form. Otherwise, click the **"Add Child"** button.
+  </Step>
+  <Step title="Fill in Details">
+    - **Name**: Child's first name (e.g., `Emma`)
+    - **Grade Level**: `0` (Kindergarten) to `12`
+  </Step>
+  <Step title="Submit">
+    The child account is created and appears in your dashboard.
+  </Step>
+</Steps>
+
+### What Gets Created
+
+When you add a learner:
+
+1. **User Account** with role `LEARNER`
+   - Auto-generated username: `emma-123456`
+   - No password (learners log in via parent selection)
+   - Linked to your parent account via `parentId`
+
+2. **Learner Profile**
+   - Grade level
+   - Empty knowledge graph (populated as lessons are completed)
+   - Subject preferences (optional)
+
+3. **Starter Rewards**
+   - Extra Recess (10 points)
+   - Pick a Movie (25 points)
+   - Special Outing (50 points)
+
+From `server/routes.ts:358-366`:
+
+```typescript
+await createReward(parentId, {
+  title: 'Extra Recess',
+  description: '15 minutes of extra free time',
+  tokenCost: 10,
+  imageEmoji: '🏃',
+  color: '#4CAF50'
+});
+```
+
+### Multiple Children
+
+Parents can manage multiple learners from a single account. Each child:
+
+- Has their own progress tracking
+- Earns points independently
+- Has a unique knowledge graph
+- Can have different grade levels and subjects
+
+From the README.md:34:
+
+> **All your kids, one account** — Each child gets their own adaptive path. Add learners as your family grows.
+
+---
+
+## Navigating the Interface
+
+Sunschool has two primary modes: **PARENT** and **LEARNER**.
+
+### Parent Mode
+
+The parent interface includes:
+
+<CardGroup cols={2}>
+  <Card title="Dashboard" icon="home">
+    **Route**: `/dashboard`
+    
+    View all children with stats: lessons completed, average score, achievements. Click **"Start Learning as [Child]"** to switch to learner mode.
+  </Card>
+  
+  <Card title="Learners Management" icon="users">
+    **Route**: `/learners`
+    
+    View and edit learner profiles: grade levels, subjects, knowledge graphs. Delete learners if needed.
+  </Card>
+  
+  <Card title="Reports" icon="chart-bar">
+    **Route**: `/reports`
+    
+    Detailed analytics per child:
+    - Progress over time
+    - Concept mastery heatmaps
+    - Recent quiz performance
+    - Export to CSV/JSON/PDF
+  </Card>
+  
+  <Card title="Rewards Shop" icon="gift">
+    **Route**: `/rewards`
+    
+    Create custom rewards, set point costs, approve redemption requests. Manage the points economy.
+  </Card>
+  
+  <Card title="Database Sync" icon="database">
+    **Route**: `/database-sync`
+    
+    Configure external PostgreSQL sync for data backup and portability.
+  </Card>
+</CardGroup>
+
+### Learner Mode
+
+The learner interface is simplified and child-friendly:
+
+<CardGroup cols={2}>
+  <Card title="Learner Home" icon="home">
+    **Route**: `/learner`
+    
+    Main hub: active lesson card, subject selector, goals strip. Kids can request new lessons here.
+  </Card>
+  
+  <Card title="Active Lesson" icon="book-open">
+    **Route**: `/lesson`
+    
+    Read the current lesson with rich markdown, SVG illustrations, and interactive elements. Tap **"Take Quiz"** when ready.
+  </Card>
+  
+  <Card title="Quiz" icon="check-circle">
+    **Route**: `/quiz/:lessonId`
+    
+    Answer multiple-choice questions. Earn points for correct answers. See instant feedback.
+  </Card>
+  
+  <Card title="Progress" icon="trending-up">
+    **Route**: `/progress`
+    
+    View lesson history, scores, achievements, and points balance. Celebrate milestones.
+  </Card>
+  
+  <Card title="Goals & Rewards" icon="trophy">
+    **Route**: `/goals`
+    
+    Browse available rewards, check point costs, redeem rewards for parent approval.
+  </Card>
+  
+  <Card title="Lessons List" icon="list">
+    **Route**: `/lessons`
+    
+    Browse past and available lessons. Replay quizzes to improve scores.
+  </Card>
+</CardGroup>
+
+### Mode Switching
+
+<Note>
+  Only **PARENT** and **ADMIN** users can switch modes. Learner accounts are locked to learner mode for safety.
+</Note>
+
+To switch modes:
+
+1. Click the **mode toggle button** in the header
+2. Select which child to use in learner mode (if you have multiple)
+3. The interface changes to the selected mode
+
+From `workflows.md:61`:
+
+> **Mode Toggle**: Parents/admins switch between GROWN_UP and LEARNER mode via header button
+
+---
+
+## Starting a Lesson
+
+### Step 1: Switch to Learner Mode
+
+From the Parent Dashboard:
+
+1. Find your child's card
+2. Click **"Start Learning as [Child Name]"**
+3. You're now in Learner Mode at `/learner`
+
+### Step 2: Request a Lesson
+
+On the Learner Home page:
+
+1. (Optional) Choose a **subject** from the dropdown
+2. (Optional) Enter a **topic** (e.g., "fractions", "planets")
+3. Click **"Create Lesson"**
+
+<Note>
+  If no subject is selected, Sunschool picks one from the learner's profile. If no topic is provided, the AI generates one based on grade level.
+</Note>
+
+### Step 3: Read the Lesson
+
+The lesson page displays:
+
+- **Markdown content** with explanations and examples
+- **SVG illustrations** generated via Google Gemini 3.1
+- **Interactive elements** like expandable sections
+
+From `workflows.md:26`:
+
+> **Active Lesson** — View current lesson with rich content, SVG illustrations, diagrams
+
+### Step 4: Take the Quiz
+
+When ready:
+
+1. Tap **"Take Quiz"**
+2. Answer multiple-choice questions
+3. See your score and earned points
+4. Return to Learner Home to start another lesson
+
+---
+
+## Understanding the Dashboard
+
+### Child Cards
+
+Each child has a card showing:
+
+- **Avatar**: First letter of their name
+- **Grade Level**: Badge (e.g., "Grade 5")
+- **Lessons Completed**: Total count
+- **Average Score**: Percentage across all quizzes
+- **Achievements**: Milestone badges earned
+- **"Start Learning"** button to switch to their account
+
+From `client/src/pages/dashboard-page.tsx:75-131`:
+
+```typescript
+<View style={styles.childCard}>
+  <View style={styles.childCardHeader}>
+    <View style={styles.childAvatar}>
+      <Text style={styles.childAvatarText}>
+        {learner.name?.charAt(0)?.toUpperCase() ?? '?'}
+      </Text>
+    </View>
+    <View style={styles.childNameContainer}>
+      <Text style={styles.childName}>{learner.name}</Text>
+      {gradeLabel && (
+        <View style={styles.gradeBadge}>
+          <Text style={styles.gradeBadgeText}>{gradeLabel}</Text>
+        </View>
+      )}
+    </View>
+  </View>
+  
+  {/* Stats: lessons, avg score, achievements */}
+  
+  <TouchableOpacity style={styles.childViewButton} onPress={onView}>
+    <Text>Start Learning as {learner.name}</Text>
+  </TouchableOpacity>
+</View>
+```
+
+### Real-Time Data
+
+Dashboard stats are fetched live from the API:
+
+```typescript
+const { data: report } = useQuery({
+  queryKey: [`/api/reports`, learner.id, 'progress'],
+  queryFn: () => apiRequest('GET', `/api/reports?learnerId=${learner.id}&type=progress`)
+});
+```
+
+---
+
+## Managing Learners
+
+### Editing Profiles
+
+1. Navigate to **Learners Management** (`/learners`)
+2. Click on a learner's name
+3. Edit:
+   - Name
+   - Grade level
+   - Subjects (add/remove)
+   - Interests (used for lesson personalization)
+4. Save changes
+
+### Changing Subjects
+
+Subjects determine which lessons are generated:
+
+1. Go to `/change-learner-subjects/:id`
+2. Toggle subjects on/off:
+   - Math
+   - Science
+   - Reading
+   - History
+   - Art
+   - etc.
+3. Save
+
+From `workflows.md:41`:
+
+> **Change Subjects** — Add/remove subjects for a learner
+
+### Viewing Knowledge Graphs
+
+Each learner has a **knowledge graph** showing:
+
+- Nodes: Concepts learned
+- Edges: Relationships between concepts
+- Colors: Mastery level (green = strong, yellow = moderate, red = weak)
+
+Access it from **Learners Management** > **[Child Name]** > **Knowledge Graph**.
+
+### Deleting Learners
+
+<Warning>
+  Deleting a learner is **permanent** and removes all associated data: lessons, quizzes, points, achievements.
+</Warning>
+
+To delete:
+
+1. Navigate to **Learners Management**
+2. Select the learner
+3. Click **"Delete"**
+4. Confirm the action
+
+---
+
+## Using the Rewards System
+
+### Creating Rewards
+
+1. Navigate to **Rewards Shop** (`/rewards`)
+2. Click **"Add Reward"**
+3. Fill in:
+   - **Title**: Name of the reward (e.g., "Ice Cream Trip")
+   - **Description**: Details (e.g., "Visit the ice cream shop")
+   - **Token Cost**: Points required (e.g., `20`)
+   - **Emoji**: Visual icon (e.g., `🍦`)
+   - **Color**: Hex code (e.g., `#FF9800`)
+4. Save
+
+Rewards appear in the learner's **Goals** page.
+
+### Approving Redemptions
+
+When a learner redeems a reward:
+
+1. **Request appears** in `/rewards` under **Pending Redemptions**
+2. Parent **approves or rejects**
+3. If approved:
+   - Points are deducted
+   - Redemption is logged
+   - Learner sees confirmation
+4. If rejected:
+   - Points are refunded
+   - Learner sees rejection message
+
+From `workflows.md:43`:
+
+> **Rewards Management** — Create/edit/delete rewards, approve/reject redemptions
+
+---
+
+## Data Privacy and Export
+
+### Your Data Stays Yours
+
+From README.md:33:
+
+> **Your data stays yours** — Nothing gets sold. Nothing trains a model. Export or delete anytime.
+
+Sunschool does not:
+
+- Sell user data
+- Train AI models on your children's lessons
+- Share data with third parties
+
+### Exporting Data
+
+Parents can export all learner data:
+
+1. Navigate to **Reports** (`/reports`)
+2. Select a learner
+3. Click **"Export"**
+4. Choose format:
+   - **CSV**: For spreadsheets
+   - **JSON**: For programmatic access
+   - **PDF**: For printing
+
+API endpoint: `GET /api/export?learnerId=123&format=json`
+
+### Database Sync
+
+For redundancy, sync data to an external PostgreSQL database:
+
+1. Navigate to **Database Sync** (`/database-sync`)
+2. Enter external database URL
+3. Choose sync mode:
+   - **Manual**: Push data on-demand
+   - **Continuous**: Auto-sync after every change
+4. Save configuration
+
+See `server/sync-utils.ts` for implementation.
+
+---
+
+## Common Workflows
+
+### Daily Learning Routine
+
+<Steps>
+  <Step title="Parent Logs In">
+    Navigate to the dashboard and review yesterday's progress.
+  </Step>
+  <Step title="Switch to Learner Mode">
+    Click **"Start Learning as [Child]"** to enter learner mode.
+  </Step>
+  <Step title="Child Completes Lesson">
+    Hand the device to your child. They read the lesson and take the quiz.
+  </Step>
+  <Step title="Earn Points">
+    Points are added to their balance. Child can redeem rewards when ready.
+  </Step>
+  <Step title="Parent Reviews">
+    Switch back to parent mode. Check **Reports** for detailed analytics.
+  </Step>
+</Steps>
+
+### Weekly Reward Redemption
+
+<Steps>
+  <Step title="Child Redeems Reward">
+    From `/goals`, child selects a reward and clicks **"Redeem"**.
+  </Step>
+  <Step title="Parent Receives Request">
+    Request appears in `/rewards` under **Pending Redemptions**.
+  </Step>
+  <Step title="Parent Approves">
+    Parent reviews and approves. Points are deducted.
+  </Step>
+  <Step title="Deliver Reward">
+    Parent fulfills the reward in real life (e.g., ice cream trip).
+  </Step>
+</Steps>
+
+### Monthly Progress Review
+
+<Steps>
+  <Step title="Export Reports">
+    Navigate to **Reports** and export data for each child.
+  </Step>
+  <Step title="Analyze Trends">
+    Review average scores, concept mastery, and time spent.
+  </Step>
+  <Step title="Adjust Goals">
+    Update reward costs, add new subjects, or change grade levels.
+  </Step>
+  <Step title="Celebrate Milestones">
+    Acknowledge achievements and encourage continued learning.
+  </Step>
+</Steps>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="zap" href="/quickstart">
+    Complete walkthrough from signup to first lesson
+  </Card>
+  <Card title="Configuration" icon="cog" href="/configuration">
+    Customize AI providers, feature flags, and settings
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/authentication">
+    Integrate with the Sunschool API programmatically
+  </Card>
+  <Card title="Installation" icon="server" href="/installation">
+    Self-host Sunschool on your infrastructure
+  </Card>
+</CardGroup>
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="I can't switch to learner mode">
+    Only **PARENT** and **ADMIN** users can switch modes. If you registered as a learner, you're locked to learner mode. Log out and create a parent account.
+  </Accordion>
+  
+  <Accordion title="Child's stats aren't updating">
+    Stats are fetched live from the API. If they're not updating:
+    - Refresh the page
+    - Check the browser console for API errors
+    - Verify the learner has completed lessons (stats are empty for new learners)
+  </Accordion>
+  
+  <Accordion title="Lesson generation is failing">
+    If lessons fail to generate:
+    - Check `OPENROUTER_API_KEY` is valid
+    - Verify the API account has sufficient credits
+    - Check server logs for errors: `npm run deploy`
+    - Set `USE_AI=0` to test without AI (uses placeholder content)
+  </Accordion>
+  
+  <Accordion title="Points aren't being awarded">
+    Points are awarded based on quiz performance. Ensure:
+    - The quiz was completed (not abandoned mid-way)
+    - The learner answered at least one question correctly
+    - Check the points ledger in **Reports** > **Points History**
+  </Accordion>
+  
+  <Accordion title="Rewards not showing up">
+    Rewards must be created by a parent before they appear in the learner's **Goals** page:
+    - Navigate to **Rewards Shop** (`/rewards`)
+    - Create at least one reward
+    - Refresh the learner's **Goals** page
+  </Accordion>
+</AccordionGroup>

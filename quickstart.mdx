@@ -1,80 +1,334 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get started with Sunschool in minutes. Sign up, add your first child, and start learning.
 ---
 
-## Get started in three steps
+# Quickstart
 
-Get your documentation site running locally and make your first customization.
+Get up and running with Sunschool in under 5 minutes. No credit card required.
 
-### Step 1: Set up your local environment
+## What You'll Do
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Sign Up">
+    Create your parent account with just email and password
+  </Step>
+  <Step title="Add Your Child">
+    Add your first learner with their name and grade level
+  </Step>
+  <Step title="Start Learning">
+    Switch to learner mode and begin the first AI-generated lesson
+  </Step>
+  <Step title="Explore the Dashboard">
+    Track progress, manage rewards, and view detailed analytics
+  </Step>
+</Steps>
 
-### Step 2: Deploy your changes
+---
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+## 1. Sign Up
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+Visit [sunschool.xyz](https://sunschool.xyz) and navigate to the **Sign Up** page.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  The first user to register is automatically promoted to **Admin** status. This gives you full system access for self-hosted installations.
 </Note>
+
+### Registration Form
+
+Provide the following information:
+
+<ParamField body="username" type="string" required>
+  Unique username for login (e.g., `parent_name`)
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Valid email address (e.g., `parent@example.com`)
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Your full name (e.g., `Sarah Johnson`)
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Secure password (minimum recommended: 8 characters)
+</ParamField>
+
+<ParamField body="role" type="string" default="PARENT">
+  Account type — select **PARENT** for managing children
+</ParamField>
+
+### Age Confirmation
+
+<Warning>
+  You must confirm that you are **at least 18 years old** and accept the Terms of Service to proceed.
+</Warning>
+
+The registration flow includes an age disclaimer checkbox:
+
+```typescript
+// From client/src/pages/auth-page.tsx:98-104
+if (!regDisclaimerAccepted) {
+  toast({
+    title: 'Error',
+    description: 'You must confirm that you are at least 18 years old and accept the terms to proceed',
+    variant: 'destructive',
+  });
+  return;
+}
+```
+
+### What Happens Next
+
+After successful registration:
+
+1. **JWT token** is generated and stored securely in your browser
+2. You're redirected to the **Parent Dashboard** (`/dashboard`)
+3. You see a prompt to **Add Your First Child**
+
+---
+
+## 2. Add Your First Child
+
+From the Parent Dashboard, you'll see an inline form or an **"Add Child"** button.
+
+### Child Information
+
+<ParamField body="name" type="string" required>
+  Child's name (e.g., `Emma`)
+</ParamField>
+
+<ParamField body="gradeLevel" type="number" required>
+  Current grade level: `0` (Kindergarten) to `12`
+</ParamField>
+
+<Note>
+  Sunschool automatically generates grade-specific lesson prompts tailored to your child's level:
+  - **K-2**: Foundational concepts with visual aids
+  - **3-4**: Intermediate topics with narrative elements
+  - **5-6**: Pre-algebra and critical thinking
+  - **7-8**: Algebra, geometry, and advanced reading
+  - **9+**: High school subjects and exam prep
+</Note>
+
+### Under the Hood
+
+When you add a child, Sunschool creates:
+
+1. **User Account** with role `LEARNER` linked to your parent account
+2. **Learner Profile** with grade level and empty knowledge graph
+3. **Starter Rewards** to activate the points system immediately:
+   - Extra Recess (10 points)
+   - Pick a Movie (25 points)
+   - Special Outing (50 points)
+
+```typescript
+// From server/routes.ts:358-366
+await createReward(parentId, {
+  title: 'Extra Recess',
+  description: '15 minutes of extra free time',
+  tokenCost: 10,
+  imageEmoji: '🏃',
+  color: '#4CAF50'
+});
+await createReward(parentId, {
+  title: 'Pick a Movie',
+  description: 'Choose a movie for family night',
+  tokenCost: 25,
+  imageEmoji: '🎬',
+  color: '#2196F3'
+});
+```
+
+### Username Generation
+
+Usernames are auto-generated to avoid conflicts:
+
+```typescript
+// From server/routes.ts:312-313
+const timestamp = Date.now().toString().slice(-6);
+const username = `${name.toLowerCase().replace(/\s+/g, '-')}-${timestamp}`;
+// Example: "emma-123456"
+```
+
+---
+
+## 3. Start the First Lesson
+
+### Switch to Learner Mode
+
+From the Parent Dashboard:
+
+1. Find your child's card showing their name, grade, and stats
+2. Click **"Start Learning as [Child Name]"**
+3. You're now in **Learner Mode** — the simplified, child-friendly interface
+
+<Note>
+  Parents can switch between **PARENT** mode (dashboard, analytics, settings) and **LEARNER** mode (lessons, quizzes, games) using the header toggle.
+</Note>
+
+### Request a Lesson
+
+On the Learner Home page (`/learner`):
+
+1. Choose a **subject** from the available options (or let the AI pick one)
+2. Optionally specify a **topic** (e.g., "fractions", "photosynthesis", "World War II")
+3. Click **"Create Lesson"**
+
+### Lesson Generation
+
+Sunschool uses AI to generate personalized lessons:
+
+- **Content**: Custom explanations, examples, and diagrams tailored to grade level
+- **Illustrations**: SVG graphics generated via Google Gemini 3.1 models
+- **Validation**: Content is checked for age-appropriateness and placeholder text
+
+```typescript
+// From server/routes.ts:886-892
+spec = await generateLessonWithRetry(gradeLevel, topic, {
+  subject: finalSubject,
+  difficulty: difficulty as 'beginner' | 'intermediate' | 'advanced',
+});
+```
+
+<Warning>
+  Lesson generation may take 10-20 seconds. SVG illustrations generate in the background and appear when ready.
+</Warning>
+
+### Reading the Lesson
+
+The lesson page (`/lesson`) displays:
+
+- **Markdown content** with rich formatting
+- **SVG illustrations** explaining key concepts
+- **Interactive elements** like expandable sections
+- **"Take Quiz"** button when you're ready to test understanding
+
+---
+
+## 4. Take the Quiz
+
+After reading the lesson, tap **"Take Quiz"** to answer questions.
+
+### Quiz Features
+
+- **Multiple-choice questions** based on lesson content
+- **Instant feedback** on each answer
+- **Points system**: Earn tokens for correct answers
+- **Score tracking**: Performance is logged for analytics
+
+### Earning Points
+
+Points are awarded based on quiz performance:
+
+- Correct answers add points to the learner's balance
+- Points can be redeemed for rewards set by parents
+- All transactions are logged in the points ledger
+
+### After the Quiz
+
+Once completed:
+
+1. **Score displayed** (e.g., "85% — Great job!")
+2. **Points added** to the learner's balance
+3. **Lesson marked complete** and moved to history
+4. **Concept mastery updated** in the knowledge graph
+
+---
+
+## 5. Explore the Parent Dashboard
+
+Switch back to **PARENT** mode to access powerful tools.
+
+### Dashboard Overview
+
+<CardGroup cols={2}>
+  <Card title="Child Cards" icon="user">
+    View each child's stats: lessons completed, average score, achievements
+  </Card>
+  <Card title="Reports" icon="chart-bar">
+    Detailed analytics per child: progress, concept mastery, time spent
+  </Card>
+  <Card title="Rewards Shop" icon="gift">
+    Create custom rewards, approve redemptions, manage point costs
+  </Card>
+  <Card title="Learner Management" icon="users">
+    Edit profiles, change grade levels, adjust subjects and interests
+  </Card>
+</CardGroup>
+
+### Key Features
+
+#### Real-Time Progress
+
+The dashboard shows live data from the `server/routes.ts:1028-1035` reports endpoint:
+
+```typescript
+const { data: report } = useQuery({
+  queryKey: [`/api/reports`, learner.id, 'progress'],
+  queryFn: () => apiRequest('GET', `/api/reports?learnerId=${learner.id}&type=progress`)
+});
+```
+
+#### Redemption Approvals
+
+When learners redeem rewards:
+
+1. Request appears in **Rewards > Pending Redemptions**
+2. Parents **approve or reject** with a tap
+3. Points are deducted only after approval
+
+#### Data Export
+
+Export all learner data:
+
+- **CSV format** for spreadsheets
+- **JSON format** for backups
+- **Sync to external database** for redundancy
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="cog" href="/configuration">
+    Customize AI providers, feature flags, and system settings
+  </Card>
+  <Card title="First Steps" icon="rocket" href="/first-steps">
+    Learn how to navigate the interface and manage learners
+  </Card>
+  <Card title="Self-Hosting" icon="server" href="/installation">
+    Install Sunschool on your own infrastructure
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/authentication">
+    Integrate with the Sunschool API programmatically
+  </Card>
+</CardGroup>
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="I don't see the dashboard after signing up">
+    Make sure you selected **PARENT** as your role during registration. Learner accounts automatically redirect to `/learner`.
+  </Accordion>
+  
+  <Accordion title="Lesson generation is taking too long">
+    Lessons typically generate in 10-20 seconds. If it's taking longer:
+    - Check your `OPENROUTER_API_KEY` is valid
+    - Verify the AI provider is not rate-limiting requests
+    - Check server logs for errors: `npm run deploy`
+  </Accordion>
+  
+  <Accordion title="Child's grade level is wrong">
+    From the Parent Dashboard:
+    1. Go to **Learners Management** (`/learners`)
+    2. Click on the child's profile
+    3. Update the grade level and save
+  </Accordion>
+  
+  <Accordion title="I can't switch to learner mode">
+    Only **PARENT** and **ADMIN** users can switch modes. Learner accounts are locked to learner mode for safety.
+  </Accordion>
+</AccordionGroup>

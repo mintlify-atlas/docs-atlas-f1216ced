@@ -1,0 +1,169 @@
+---
+title: 'Points'
+description: 'Track and manage learner points balance'
+icon: 'coins'
+---
+
+## Get Points Balance
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/points/balance
+curl -X GET https://api.sunschool.xyz/api/points/balance?learnerId=3 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="learnerId" type="string">
+  Learner ID to get balance for (required for PARENT/ADMIN, defaults to authenticated user for LEARNER)
+</ParamField>
+
+### Authorization
+
+- **LEARNER**: Can only access their own balance
+- **PARENT**: Can access their children's balances with learnerId param
+- **ADMIN**: Can access any learner's balance
+
+### Response
+
+```json Response Example
+{
+  "balance": 42
+}
+```
+
+### Error Codes
+
+- **400** - learnerId required
+- **403** - Forbidden
+
+---
+
+## Get Points History
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/points/history
+curl -X GET https://api.sunschool.xyz/api/points/history?learnerId=3&limit=20 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="learnerId" type="string">
+  Learner ID to get history for (required for PARENT/ADMIN, defaults to authenticated user for LEARNER)
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Maximum number of transactions to return (default: 50)
+</ParamField>
+
+### Authorization
+
+Same as Get Points Balance.
+
+### Response
+
+<ResponseField name="transactions" type="array">
+  Array of point transaction records
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">
+      Transaction ID
+    </ResponseField>
+    <ResponseField name="learnerId" type="number">
+      Learner user ID
+    </ResponseField>
+    <ResponseField name="amount" type="number">
+      Points amount (positive for credits, negative for debits)
+    </ResponseField>
+    <ResponseField name="sourceType" type="string">
+      Source type (e.g., "QUIZ_CORRECT", "REWARD_REDEMPTION")
+    </ResponseField>
+    <ResponseField name="sourceId" type="string">
+      Source identifier (e.g., lesson ID)
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Human-readable description
+    </ResponseField>
+    <ResponseField name="balanceAfter" type="number">
+      Running balance after this transaction
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      Timestamp of the transaction
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json Response Example
+[
+  {
+    "id": "txn_123456",
+    "learnerId": 3,
+    "amount": 5,
+    "sourceType": "QUIZ_CORRECT",
+    "sourceId": "550e8400-e29b-41d4-a716-446655440000",
+    "description": "Quiz 75% [Double-or-Loss]",
+    "balanceAfter": 42,
+    "createdAt": "2024-01-15T10:30:00.000Z"
+  },
+  {
+    "id": "txn_123455",
+    "learnerId": 3,
+    "amount": -10,
+    "sourceType": "REWARD_SAVE",
+    "sourceId": "reward_789",
+    "description": "Saved for Extra Recess",
+    "balanceAfter": 37,
+    "createdAt": "2024-01-15T09:15:00.000Z"
+  }
+]
+```
+
+### Error Codes
+
+- **400** - learnerId required
+- **403** - Forbidden
+
+---
+
+## Get Current Balance (Simplified)
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/points
+curl -X GET https://api.sunschool.xyz/api/points \
+  -H "Authorization: Bearer {token}"
+```
+
+Returns the points balance for the authenticated user.
+
+### Response
+
+```json
+{
+  "balance": 42
+}
+```
+
+### Error Codes
+
+- **401** - Unauthorized
+
+---
+
+## Points Source Types
+
+Common source types in the points system:
+
+- **QUIZ_CORRECT** - Points earned from correct quiz answers
+- **REWARD_SAVE** - Points delegated to a reward savings goal
+- **REWARD_REDEMPTION** - Points used to redeem a reward
+- **DOUBLE_OR_LOSS_DEDUCTION** - Points deducted from wrong answers in double-or-loss mode
+- **ADMIN_ADJUSTMENT** - Manual adjustment by an administrator
+
+<Note>
+  All point transactions are immutable and stored with a complete audit trail including timestamps, source information, and running balance.
+</Note>

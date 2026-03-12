@@ -1,0 +1,418 @@
+---
+title: Progress Tracking
+description: Monitor your children's learning progress, achievements, and activity
+---
+
+# Progress Tracking
+
+Sunschool provides comprehensive progress tracking tools so parents can stay informed about their children's learning journey without being intrusive.
+
+## The Progress Page
+
+Access detailed progress information at `/progress` or from the dashboard quick links.
+
+From `progress-page.tsx:23-30`:
+
+```typescript
+const ProgressPage = () => {
+  const { user } = useAuth();
+  const { selectedLearner } = useMode();
+  const learnerId = selectedLearner?.id || user?.id;
+  
+  // Fetch lesson history, achievements, points, and profile
+};
+```
+
+## Key Metrics
+
+### Lesson History
+
+View all completed and in-progress lessons:
+
+From `progress-page.tsx:33-42`:
+
+```typescript
+const {
+  data: lessons,
+  isLoading: isLessonsLoading,
+  error: lessonsError,
+} = useQuery({
+  queryKey: queryKeys.lessonHistory(learnerId),
+  queryFn: () => apiRequest('GET', `/api/lessons?learnerId=${learnerId}`).then(res => res.data),
+  enabled: !!learnerId,
+  staleTime: staleTimes.learnerData,
+});
+```
+
+### Achievements
+
+Track all achievements and milestones:
+
+From `progress-page.tsx:44-54`:
+
+```typescript
+const {
+  data: achievements,
+  isLoading: isAchievementsLoading,
+  error: achievementsError,
+} = useQuery({
+  queryKey: queryKeys.achievements(learnerId),
+  queryFn: () => apiRequest('GET', `/api/achievements?learnerId=${learnerId}`).then(res => res.data),
+  enabled: !!learnerId,
+  staleTime: staleTimes.learnerData,
+});
+```
+
+### Points Balance
+
+Monitor accumulated learning points:
+
+From `progress-page.tsx:56-62`:
+
+```typescript
+const { data: pointsData } = useQuery({
+  queryKey: queryKeys.points(learnerId),
+  queryFn: () => apiRequest('GET', `/api/points/balance?learnerId=${learnerId}`).then(res => res.data),
+  enabled: !!learnerId,
+  staleTime: staleTimes.learnerData,
+});
+```
+
+## Understanding Metrics
+
+### Lessons Completed
+
+From `progress-page.tsx:86-89`:
+
+```typescript
+const getCompletedLessonCount = () => {
+  if (!lessons) return 0;
+  return lessons.filter((lesson: any) => lesson.status === 'DONE').length;
+};
+```
+
+<Info>
+Only lessons with status 'DONE' are counted as completed. In-progress lessons don't count toward this metric.
+</Info>
+
+### Average Score
+
+Automatically calculated from completed lessons:
+
+From `progress-page.tsx:91-97`:
+
+```typescript
+const getAverageScore = () => {
+  if (!lessons) return 0;
+  const completedLessons = lessons.filter((lesson: any) => lesson.status === 'DONE' && lesson.score !== null);
+  if (completedLessons.length === 0) return 0;
+  const totalScore = completedLessons.reduce((sum: number, lesson: any) => sum + (lesson.score || 0), 0);
+  return Math.round(totalScore / completedLessons.length);
+};
+```
+
+### Subject Mastery
+
+Built from lesson performance by subject:
+
+From `progress-page.tsx:100-116`:
+
+```typescript
+const getSubjectMastery = () => {
+  if (!lessons) return [];
+  const subjectScores: Record<string, { total: number; count: number }> = {};
+  
+  lessons.forEach((lesson: any) => {
+    if (lesson.status === 'DONE' && lesson.subject && lesson.score != null) {
+      if (!subjectScores[lesson.subject]) {
+        subjectScores[lesson.subject] = { total: 0, count: 0 };
+      }
+      subjectScores[lesson.subject].total += lesson.score;
+      subjectScores[lesson.subject].count += 1;
+    }
+  });
+  
+  return Object.entries(subjectScores).map(([subject, data]) => ({
+    subject,
+    mastery: data.total / data.count,
+  }));
+};
+```
+
+## Progress Components
+
+### Learner Progress Widget
+
+From `progress-page.tsx:165-173`:
+
+```typescript
+<LearnerProgress
+  totalPoints={totalPoints}
+  lessonsCompleted={getCompletedLessonCount()}
+  achievementCount={achievements?.length || 0}
+  streak={0}
+  averageScore={getAverageScore()}
+  subjectMastery={getSubjectMastery()}
+/>
+```
+
+This component displays:
+- Current level and XP progress
+- Total points earned
+- Lessons completed
+- Achievement count
+- Learning streak (if applicable)
+- Average score percentage
+- Subject-by-subject mastery bars
+
+### Trophy Case
+
+From `progress-page.tsx:176-206`:
+
+```typescript
+<View style={styles.sectionContainer}>
+  <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>My Trophies</Text>
+
+  {achievements && achievements.length > 0 ? (
+    <View style={styles.trophyGrid}>
+      {achievements.map((achievement: any, index: number) => (
+        <View
+          key={index}
+          style={[styles.trophyItem, { backgroundColor: getAchievementBgColor(achievement.type) }]}
+        >
+          <View style={styles.trophyIconContainer}>
+            {getAchievementIcon(achievement.type)}
+          </View>
+          <Text style={styles.trophyTitle} numberOfLines={2}>
+            {achievement.payload?.title || 'Achievement'}
+          </Text>
+        </View>
+      ))}
+    </View>
+  ) : (
+    <View style={[styles.emptyState, { backgroundColor: colors.surfaceColor }]}>
+      <Award size={40} color="#DFE6E9" />
+      <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+        Complete lessons to earn trophies!
+      </Text>
+    </View>
+  )}
+</View>
+```
+
+#### Achievement Types
+
+From `progress-page.tsx:119-133`:
+
+```typescript
+const getAchievementIcon = (type: string) => {
+  if (type?.includes('streak')) return <Zap size={24} color="#FFD93D" />;
+  if (type?.includes('quiz') || type?.includes('master')) return <Award size={24} color="#C084FC" />;
+  if (type?.includes('first') || type?.includes('lesson')) return <BookOpen size={24} color="#6BCB77" />;
+  return <Star size={24} color="#FF8C42" />;
+};
+
+const getAchievementBgColor = (type: string) => {
+  if (type?.includes('streak')) return '#FFF8E1';
+  if (type?.includes('quiz') || type?.includes('master')) return '#F3E8FF';
+  if (type?.includes('first') || type?.includes('lesson')) return '#E8F5E9';
+  return '#FFF3E0';
+};
+```
+
+<CardGroup cols={4}>
+  <Card title="Streak" icon="bolt">
+    Yellow badges for learning streaks
+  </Card>
+  
+  <Card title="Mastery" icon="trophy">
+    Purple badges for quiz mastery
+  </Card>
+  
+  <Card title="First Time" icon="star">
+    Green badges for new achievements
+  </Card>
+  
+  <Card title="Other" icon="award">
+    Orange badges for misc achievements
+  </Card>
+</CardGroup>
+
+### Recent Lessons
+
+From `progress-page.tsx:208-230`:
+
+```typescript
+<View style={styles.sectionContainer}>
+  <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Recent Lessons</Text>
+
+  {lessons && lessons.length > 0 ? (
+    lessons.slice(0, 10).map((lesson: any, index: number) => (
+      <LessonCard
+        key={index}
+        lesson={lesson}
+        isHistory
+        onPress={() => {}}
+        style={styles.historyCard}
+      />
+    ))
+  ) : (
+    <View style={[styles.emptyState, { backgroundColor: colors.surfaceColor }]}>
+      <BookOpen size={40} color="#DFE6E9" />
+      <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+        Start a lesson to see your history!
+      </Text>
+    </View>
+  )}
+</View>
+```
+
+<Info>
+The progress page shows the 10 most recent lessons by default. View the full reports page for complete history.
+</Info>
+
+## Reports and Analytics
+
+For more detailed analysis, use the Reports page.
+
+### Report Types
+
+From `reports-page.tsx:16-20`:
+
+```typescript
+const [selectedLearnerId, setSelectedLearnerId] = useState<number | null>(null);
+const [selectedReportType, setSelectedReportType] = useState<string>('progress');
+
+// Available report types: 'progress', 'lessons', 'achievements'
+```
+
+### Progress Report
+
+From `reports-page.tsx:165-240`:
+
+```typescript
+{selectedReportType === 'progress' && (
+  <View style={styles.reportContent}>
+    <View style={styles.statsContainer}>
+      <View style={styles.statCard}>
+        <Text style={styles.statValue}>{analytics?.conceptsLearned || 0}</Text>
+        <Text style={styles.statLabel}>Concepts Learned</Text>
+      </View>
+      <View style={styles.statCard}>
+        <Text style={styles.statValue}>{analytics?.lessonsCompleted || 0}</Text>
+        <Text style={styles.statLabel}>Lessons Completed</Text>
+      </View>
+      <View style={styles.statCard}>
+        <Text style={styles.statValue}>{analytics?.achievementsCount || 0}</Text>
+        <Text style={styles.statLabel}>Achievements</Text>
+      </View>
+    </View>
+
+    <Text style={styles.reportSectionTitle}>Learning Progress</Text>
+    <View style={styles.progressContainer}>
+      <View style={styles.progressBarContainer}>
+        <View style={[styles.progressBar, { width: `${analytics?.progressRate || 0}%` }]} />
+      </View>
+      <Text style={styles.progressText}>
+        {Math.round(analytics?.progressRate || 0)}% Complete
+      </Text>
+    </View>
+
+    <Text style={styles.reportSectionTitle}>Subject Distribution</Text>
+    <View style={styles.subjectDistribution}>
+      {analytics?.subjectDistribution && Object.entries(analytics.subjectDistribution).map(([subject, count], index) => (
+        <View key={index} style={styles.subjectItem}>
+          <View style={styles.subjectItemHeader}>
+            <Text style={styles.subjectName}>{subject}</Text>
+            <Text style={styles.subjectCount}>{count as number} lessons</Text>
+          </View>
+          <View style={styles.subjectBarContainer}>
+            <View style={[styles.subjectBar, { width: `${(count as number / analytics.totalLessons) * 100}%` }]} />
+          </View>
+        </View>
+      ))}
+    </View>
+  </View>
+)}
+```
+
+### Lessons Report
+
+Shows recent lesson history with:
+- Lesson title
+- Completion date
+- Status (DONE, ACTIVE, etc.)
+- Subject and topic
+
+### Achievements Report
+
+Lists all earned achievements with:
+- Achievement title and description
+- Date earned
+- Achievement type
+- Associated icon
+
+## Understanding Concept Mastery
+
+Concept mastery is tracked automatically based on quiz performance and lesson completion. The system:
+
+1. **Identifies concepts** from lesson content
+2. **Tracks answers** for each concept
+3. **Calculates mastery** as percentage correct
+4. **Recommends reinforcement** for struggling areas
+
+<Info>
+Mastery levels update in real-time as children complete lessons and quizzes.
+</Info>
+
+## Refreshing Data
+
+From `progress-page.tsx:72-81`:
+
+```typescript
+const onRefresh = useCallback(async () => {
+  setRefreshing(true);
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.lessonHistory(learnerId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.achievements(learnerId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.points(learnerId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.learnerProfile(learnerId as number) }),
+  ]);
+  setRefreshing(false);
+}, [learnerId]);
+```
+
+Pull down on the progress page to refresh all data.
+
+## Privacy Considerations
+
+<Warning>
+Progress tracking is designed to inform and support, not surveil. Use this information to:
+
+- Celebrate achievements
+- Identify areas needing support
+- Understand learning patterns
+- Set appropriate goals
+
+Avoid using metrics to pressure or compare children.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="View Reports" icon="chart-bar" href="/parents/reports-page">
+    Access detailed analytics and reports
+  </Card>
+  
+  <Card title="Set Learning Goals" icon="target" href="/parents/learning-goals">
+    Create objectives based on progress
+  </Card>
+  
+  <Card title="Configure Rewards" icon="gift" href="/parents/rewards-system">
+    Incentivize progress with rewards
+  </Card>
+  
+  <Card title="Export Data" icon="download" href="/parents/data-export">
+    Download complete learning history
+  </Card>
+</CardGroup>

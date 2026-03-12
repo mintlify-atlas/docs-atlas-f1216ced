@@ -1,0 +1,646 @@
+---
+title: Configuration
+description: Configure AI providers, feature flags, and system settings to customize your Sunschool instance.
+---
+
+# Configuration
+
+Sunschool is highly configurable through environment variables and feature flags. This guide covers all configuration options.
+
+---
+
+## Environment Variables
+
+All configuration is managed through environment variables in the `.env` file.
+
+### Core Settings
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL connection string
+  
+  ```env
+  DATABASE_URL="postgresql://user:password@host:port/database"
+  ```
+  
+  **Format**: `postgresql://[user]:[password]@[host]:[port]/[database]`
+  
+  **Examples**:
+  - Local: `postgresql://postgres:postgres@localhost:5432/sunschool`
+  - Neon: `postgresql://user:pass@ep-xyz.us-east-2.aws.neon.tech/sunschool?sslmode=require`
+  - Railway: Automatically provided via `$DATABASE_URL`
+</ParamField>
+
+<ParamField path="DATABASE_SSL" type="boolean" default="true">
+  Enable SSL for database connections
+  
+  ```env
+  DATABASE_SSL=true
+  ```
+  
+  Set to `false` for local development without SSL.
+</ParamField>
+
+<ParamField path="PORT" type="number" default="5000">
+  Port for the Express server
+  
+  ```env
+  PORT=5000
+  ```
+  
+  Most hosting platforms provide `$PORT` automatically.
+</ParamField>
+
+<ParamField path="NODE_ENV" type="string" default="development">
+  Environment mode
+  
+  ```env
+  NODE_ENV=production
+  ```
+  
+  **Values**: `development`, `production`
+</ParamField>
+
+---
+
+## Authentication
+
+<ParamField path="JWT_SECRET" type="string" required>
+  Secret key for signing JWT tokens
+  
+  ```env
+  JWT_SECRET="your-jwt-secret-key"
+  ```
+  
+  **Generate securely**:
+  ```bash
+  openssl rand -base64 32
+  ```
+  
+  From `server/config/env.ts:41`:
+  ```typescript
+  export const JWT_SECRET = getEnv('JWT_SECRET', SESSION_SECRET);
+  ```
+</ParamField>
+
+<ParamField path="JWT_EXPIRY" type="string" default="7d">
+  JWT token expiration time
+  
+  ```env
+  JWT_EXPIRY=7d
+  ```
+  
+  **Format**: `[number][unit]` where unit is `s`, `m`, `h`, `d`
+  
+  **Examples**: `30m`, `12h`, `7d`, `90d`
+</ParamField>
+
+<ParamField path="SESSION_SECRET" type="string" required>
+  Secret key for session management
+  
+  ```env
+  SESSION_SECRET="your-session-secret"
+  ```
+  
+  **Generate securely**:
+  ```bash
+  openssl rand -base64 32
+  ```
+</ParamField>
+
+---
+
+## AI Provider Configuration
+
+Sunschool supports multiple AI providers with automatic fallback chains.
+
+### OpenRouter (Primary)
+
+<ParamField path="OPENROUTER_API_KEY" type="string" required>
+  API key for OpenRouter
+  
+  ```env
+  OPENROUTER_API_KEY="sk-or-v1-..."
+  ```
+  
+  **Get your key**: [openrouter.ai/keys](https://openrouter.ai/keys)
+  
+  From `server/config/env.ts:48`:
+  ```typescript
+  export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+  ```
+  
+  Used for:
+  - Lesson content generation
+  - Quiz question creation
+  - SVG illustration generation
+</ParamField>
+
+<ParamField path="LLM_PROVIDER" type="string" default="openrouter">
+  Primary LLM provider
+  
+  ```env
+  LLM_PROVIDER=openrouter
+  ```
+  
+  **Options**: `openrouter`, `bittensor`, `perplexity`
+  
+  From `server/config/env.ts:45`:
+  ```typescript
+  export const LLM_PROVIDER = process.env.LLM_PROVIDER || 'openrouter';
+  ```
+</ParamField>
+
+### Bittensor (Experimental)
+
+<Warning>
+  Bittensor Subnet 1 integration is **experimental**. OpenRouter is recommended for production.
+</Warning>
+
+<ParamField path="ENABLE_BITTENSOR_SUBNET_1" type="boolean" default="false">
+  Enable Bittensor Subnet 1 provider
+  
+  ```env
+  ENABLE_BITTENSOR_SUBNET_1=1
+  ```
+  
+  From `server/config/flags.ts:12`:
+  ```typescript
+  export const ENABLE_BITTENSOR_SUBNET_1 = process.env.ENABLE_BITTENSOR_SUBNET_1 === '1';
+  ```
+</ParamField>
+
+<ParamField path="BITTENSOR_API_KEY" type="string">
+  API key for Bittensor Archive
+  
+  ```env
+  BITTENSOR_API_KEY="your-bittensor-key"
+  ```
+</ParamField>
+
+<ParamField path="BITTENSOR_SUBNET_1_URL" type="string" default="https://archive.opentensor.ai/graphql">
+  GraphQL endpoint for Bittensor Subnet 1
+  
+  ```env
+  BITTENSOR_SUBNET_1_URL="https://archive.opentensor.ai/graphql"
+  ```
+  
+  From `server/config/env.ts:52`:
+  ```typescript
+  export const BITTENSOR_SUBNET_1_URL = process.env.BITTENSOR_SUBNET_1_URL || 'https://archive.opentensor.ai/graphql';
+  ```
+</ParamField>
+
+<ParamField path="BITTENSOR_WALLET_NAME" type="string">
+  Bittensor wallet name for authentication
+  
+  ```env
+  BITTENSOR_WALLET_NAME="your-wallet-name"
+  ```
+</ParamField>
+
+<ParamField path="BITTENSOR_WALLET_HOTKEY" type="string">
+  Bittensor wallet hotkey
+  
+  ```env
+  BITTENSOR_WALLET_HOTKEY="your-hotkey"
+  ```
+</ParamField>
+
+<ParamField path="BITTENSOR_FALLBACK_ENABLED" type="boolean" default="true">
+  Enable automatic fallback to OpenRouter when Bittensor fails
+  
+  ```env
+  BITTENSOR_FALLBACK_ENABLED=1
+  ```
+  
+  From `server/config/flags.ts:13`:
+  ```typescript
+  export const BITTENSOR_FALLBACK_ENABLED = process.env.BITTENSOR_FALLBACK_ENABLED !== '0';
+  ```
+</ParamField>
+
+### Perplexity
+
+<ParamField path="PERPLEXITY_API_KEY" type="string">
+  API key for Perplexity AI
+  
+  ```env
+  PERPLEXITY_API_KEY="pplx-..."
+  ```
+  
+  **Get your key**: [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
+  
+  From `server/config/env.ts:57`:
+  ```typescript
+  export const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY || '';
+  ```
+</ParamField>
+
+---
+
+## Image Generation
+
+### Provider Selection
+
+<ParamField path="IMAGE_PROVIDER" type="string" default="svg-llm">
+  Image generation provider
+  
+  ```env
+  IMAGE_PROVIDER=svg-llm
+  ```
+  
+  **Options**:
+  - `svg-llm`: LLM-generated SVG graphics (recommended)
+  - `openrouter`: Raster images via OpenRouter
+  - `stability`: Stability AI models
+  
+  From `server/config/env.ts:60`:
+  ```typescript
+  export const IMAGE_PROVIDER = process.env.IMAGE_PROVIDER || 'svg-llm';
+  ```
+</ParamField>
+
+### OpenRouter Image Models
+
+<ParamField path="OPENROUTER_IMAGE_MODEL" type="string" default="google/gemini-3.1-pro-preview">
+  Primary model for image generation
+  
+  ```env
+  OPENROUTER_IMAGE_MODEL="google/gemini-3.1-pro-preview"
+  ```
+  
+  From `server/config/env.ts:61`:
+  ```typescript
+  export const OPENROUTER_IMAGE_MODEL = process.env.OPENROUTER_IMAGE_MODEL || 'google/gemini-3.1-pro-preview';
+  ```
+</ParamField>
+
+<ParamField path="OPENROUTER_SVG_MODEL" type="string" default="google/gemini-3.1-pro-preview">
+  Primary model for SVG generation
+  
+  ```env
+  OPENROUTER_SVG_MODEL="google/gemini-3.1-pro-preview"
+  ```
+  
+  From `server/config/env.ts:62`:
+  ```typescript
+  export const OPENROUTER_SVG_MODEL = process.env.OPENROUTER_SVG_MODEL || 'google/gemini-3.1-pro-preview';
+  ```
+</ParamField>
+
+<ParamField path="IMAGE_MODEL_FALLBACKS" type="string">
+  Comma-separated list of fallback models for image generation
+  
+  ```env
+  IMAGE_MODEL_FALLBACKS="google/gemini-3.1-flash-image-preview,google/gemini-3-flash-preview"
+  ```
+  
+  Tried in order when the primary model returns 404 or fails.
+  
+  From `server/config/env.ts:69-70`:
+  ```typescript
+  export const IMAGE_MODEL_FALLBACKS: string[] = (process.env.IMAGE_MODEL_FALLBACKS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  ```
+</ParamField>
+
+<ParamField path="SVG_MODEL_FALLBACKS" type="string">
+  Comma-separated list of fallback models for SVG generation
+  
+  ```env
+  SVG_MODEL_FALLBACKS="google/gemini-3.1-flash-lite-preview,google/gemini-3-flash-preview"
+  ```
+  
+  From `server/config/env.ts:67-68`:
+  ```typescript
+  export const SVG_MODEL_FALLBACKS: string[] = (process.env.SVG_MODEL_FALLBACKS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  ```
+  
+  Default fallbacks from `server/config/env.ts:73-76`:
+  ```typescript
+  export const DEFAULT_SVG_MODEL_FALLBACKS = [
+    'google/gemini-3.1-flash-lite-preview',
+    'google/gemini-3-flash-preview',
+  ];
+  ```
+</ParamField>
+
+### Image Generation Limits
+
+<ParamField path="IMAGE_GENERATION_TIMEOUT" type="number" default="15000">
+  Timeout for image generation in milliseconds
+  
+  ```env
+  IMAGE_GENERATION_TIMEOUT=15000
+  ```
+  
+  From `server/config/env.ts:63`:
+  ```typescript
+  export const IMAGE_GENERATION_TIMEOUT = parseInt(process.env.IMAGE_GENERATION_TIMEOUT || '15000');
+  ```
+</ParamField>
+
+<ParamField path="MAX_IMAGES_PER_LESSON" type="number" default="4">
+  Maximum number of images to generate per lesson
+  
+  ```env
+  MAX_IMAGES_PER_LESSON=4
+  ```
+  
+  From `server/config/env.ts:64`:
+  ```typescript
+  export const MAX_IMAGES_PER_LESSON = parseInt(process.env.MAX_IMAGES_PER_LESSON || '4');
+  ```
+</ParamField>
+
+---
+
+## Feature Flags
+
+Feature flags control optional functionality. See `server/config/flags.ts` for implementation.
+
+### AI Controls
+
+<ParamField path="USE_AI" type="boolean" default="true">
+  Enable AI-generated content
+  
+  ```env
+  USE_AI=1
+  ```
+  
+  Set to `0` to disable all AI features (lessons use placeholder content).
+  
+  From `server/config/flags.ts:9`:
+  ```typescript
+  export const USE_AI = process.env.USE_AI !== '0';
+  ```
+</ParamField>
+
+<ParamField path="ENABLE_OPENROUTER_IMAGES" type="boolean" default="true">
+  Enable OpenRouter image generation
+  
+  ```env
+  ENABLE_OPENROUTER_IMAGES=1
+  ```
+  
+  From `server/config/flags.ts:19`:
+  ```typescript
+  export const ENABLE_OPENROUTER_IMAGES = process.env.ENABLE_OPENROUTER_IMAGES !== '0';
+  ```
+</ParamField>
+
+<ParamField path="ENABLE_SVG_LLM" type="boolean" default="true">
+  Enable LLM-based SVG generation
+  
+  ```env
+  ENABLE_SVG_LLM=1
+  ```
+  
+  From `server/config/flags.ts:20`:
+  ```typescript
+  export const ENABLE_SVG_LLM = process.env.ENABLE_SVG_LLM !== '0';
+  ```
+</ParamField>
+
+<ParamField path="ENABLE_STABILITY_FALLBACK" type="boolean" default="false">
+  Enable Stability AI as fallback for image generation
+  
+  ```env
+  ENABLE_STABILITY_FALLBACK=1
+  ```
+  
+  From `server/config/flags.ts:21`:
+  ```typescript
+  export const ENABLE_STABILITY_FALLBACK = process.env.ENABLE_STABILITY_FALLBACK === '1';
+  ```
+</ParamField>
+
+### Analytics
+
+<ParamField path="ENABLE_STATS" type="boolean" default="true">
+  Enable statistics collection
+  
+  ```env
+  ENABLE_STATS=1
+  ```
+  
+  Set to `0` to disable analytics tracking (performance data, usage metrics).
+  
+  From `server/config/flags.ts:16`:
+  ```typescript
+  export const ENABLE_STATS = process.env.ENABLE_STATS !== '0';
+  ```
+</ParamField>
+
+---
+
+## Example Configurations
+
+### Minimal (Development)
+
+```env
+# Minimal .env for local development
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/sunschool"
+JWT_SECRET="dev-secret-change-me"
+SESSION_SECRET="dev-session-secret"
+OPENROUTER_API_KEY="sk-or-v1-..."
+PORT=5000
+```
+
+### Production (Recommended)
+
+```env
+# Production .env with all providers
+DATABASE_URL="postgresql://user:pass@prod-db.example.com:5432/sunschool?sslmode=require"
+DATABASE_SSL=true
+JWT_SECRET="<openssl-rand-base64-32>"
+JWT_EXPIRY=7d
+SESSION_SECRET="<openssl-rand-base64-32>"
+
+# AI Providers
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY="sk-or-v1-..."
+PERPLEXITY_API_KEY="pplx-..."
+
+# Image Generation
+IMAGE_PROVIDER=svg-llm
+OPENROUTER_SVG_MODEL="google/gemini-3.1-pro-preview"
+SVG_MODEL_FALLBACKS="google/gemini-3.1-flash-lite-preview,google/gemini-3-flash-preview"
+IMAGE_GENERATION_TIMEOUT=15000
+MAX_IMAGES_PER_LESSON=4
+
+# Feature Flags
+USE_AI=1
+ENABLE_STATS=1
+ENABLE_SVG_LLM=1
+ENABLE_OPENROUTER_IMAGES=1
+
+# Server
+PORT=5000
+NODE_ENV=production
+```
+
+### Bittensor Experimental
+
+```env
+# Bittensor-first configuration with OpenRouter fallback
+DATABASE_URL="postgresql://user:pass@host:5432/sunschool"
+JWT_SECRET="<secure-key>"
+SESSION_SECRET="<secure-key>"
+
+# Bittensor Primary
+LLM_PROVIDER=bittensor
+ENABLE_BITTENSOR_SUBNET_1=1
+BITTENSOR_API_KEY="your-key"
+BITTENSOR_SUBNET_1_URL="https://archive.opentensor.ai/graphql"
+BITTENSOR_WALLET_NAME="wallet"
+BITTENSOR_WALLET_HOTKEY="hotkey"
+
+# OpenRouter Fallback
+BITTENSOR_FALLBACK_ENABLED=1
+OPENROUTER_API_KEY="sk-or-v1-..."
+
+# Feature Flags
+USE_AI=1
+ENABLE_STATS=1
+```
+
+---
+
+## Advanced Configuration
+
+### Database Connection Pooling
+
+Sunschool uses `pg` with Neon serverless driver. Connection pooling is handled automatically.
+
+For high-traffic deployments, configure external pooling (e.g., PgBouncer):
+
+```env
+DATABASE_URL="postgresql://user:pass@pgbouncer:6432/sunschool?sslmode=require"
+```
+
+### CORS Configuration
+
+CORS is enabled by default for all origins in development. For production, edit `server/index.ts`:
+
+```typescript
+import cors from 'cors';
+
+app.use(cors({
+  origin: 'https://yourdomain.com',
+  credentials: true,
+}));
+```
+
+### Rate Limiting
+
+Sunschool does not include built-in rate limiting. Use a reverse proxy (nginx, Caddy) or middleware:
+
+```bash
+npm install express-rate-limit
+```
+
+```typescript
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+});
+
+app.use('/api/', limiter);
+```
+
+---
+
+## Configuration Validation
+
+Sunschool validates critical environment variables on startup. Missing required variables throw errors:
+
+```typescript
+// From server/config/env.ts:20-28
+export function getEnv(key: string, fallback?: string): string {
+  const value = process.env[key];
+  if (value === undefined) {
+    if (fallback !== undefined) {
+      return fallback;
+    }
+    throw new Error(`Environment variable ${key} is required but not set`);
+  }
+  return value;
+}
+```
+
+### Startup Checks
+
+When the server starts:
+
+1. **Database connection** is tested
+2. **Migrations** are run automatically
+3. **Missing API keys** log warnings (not errors) for optional providers
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="First Steps" icon="rocket" href="/first-steps">
+    Navigate the interface and manage learners
+  </Card>
+  <Card title="Installation" icon="server" href="/installation">
+    Self-host Sunschool on your infrastructure
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/authentication">
+    Integrate with the Sunschool API
+  </Card>
+  <Card title="Quickstart" icon="zap" href="/quickstart">
+    Complete walkthrough from signup to first lesson
+  </Card>
+</CardGroup>
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="API key not working">
+    **Symptoms**: `Failed to generate lesson content`, 401 errors
+    
+    **Solutions**:
+    - Verify the API key is correct (no extra spaces or quotes)
+    - Check the provider's dashboard for key status
+    - Test the key with a curl request
+    - Ensure the account has sufficient credits/quota
+  </Accordion>
+  
+  <Accordion title="Feature flag not taking effect">
+    **Symptoms**: Feature still enabled/disabled after changing flag
+    
+    **Solutions**:
+    - Restart the server: `npm start`
+    - Check `.env` file has no typos in variable names
+    - Verify the flag is read correctly: add `console.log(USE_AI)` in `server/config/flags.ts`
+    - Clear any cached environment variables
+  </Accordion>
+  
+  <Accordion title="Image generation is slow">
+    **Symptoms**: Lessons load but images take 20+ seconds
+    
+    **Solutions**:
+    - Increase `IMAGE_GENERATION_TIMEOUT` (default: 15000ms)
+    - Use faster models in fallback chain (e.g., `gemini-3-flash-preview`)
+    - Reduce `MAX_IMAGES_PER_LESSON` to 2-3
+    - Check OpenRouter model availability at [openrouter.ai/models](https://openrouter.ai/models)
+  </Accordion>
+  
+  <Accordion title="Database SSL error">
+    **Symptoms**: `Error: self signed certificate`, `SSL SYSCALL error`
+    
+    **Solutions**:
+    - For local dev, set `DATABASE_SSL=false`
+    - For production, ensure the database supports SSL
+    - Add `?sslmode=require` to `DATABASE_URL`
+    - Check the database provider's SSL documentation
+  </Accordion>
+</AccordionGroup>

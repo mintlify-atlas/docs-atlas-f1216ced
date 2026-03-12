@@ -1,0 +1,325 @@
+---
+title: AI Tutoring
+description: How Sunschool uses AI to generate personalized lessons for every learner
+icon: sparkles
+---
+
+## Overview
+
+Sunschool uses advanced AI to generate personalized educational content tailored to each learner's grade level and learning needs. The system combines multiple AI providers and intelligent prompt engineering to create engaging, age-appropriate lessons.
+
+## AI-Powered Lesson Generation
+
+### Multi-Provider Architecture
+
+Sunschool uses a flexible AI provider system to ensure reliability and quality:
+
+- **Primary Provider**: OpenRouter with Google Gemini 2.0 Flash
+- **Fallback Providers**: Bittensor, Perplexity
+- **Specialized Services**: Image generation, diagram creation, SVG generation
+
+The system automatically routes requests to the best available provider based on the content type and current availability.
+
+```typescript
+// From server/services/enhanced-lesson-service.ts:233
+const structureResponse = await askOpenRouter({
+  messages: [
+    {
+      role: 'system',
+      content: buildEnhancedLessonPrompt(gradeLevel, topic, subject)
+    },
+    {
+      role: 'user',
+      content: `Create an educational lesson about "${topic}" for grade ${gradeLevel} students.`
+    }
+  ],
+  model: 'google/gemini-2.0-flash-001',
+  temperature: 0.7,
+});
+```
+
+## Grade-Specific Prompts
+
+Each grade level has carefully crafted prompts that ensure age-appropriate content:
+
+### K-2 (Ages 5-7)
+
+<CodeGroup>
+```typescript Vocabulary Constraints
+// From server/prompts/grades/gradeK2.ts:9
+- Maximum 5 words per sentence (count carefully!)
+- Maximum 75 words total for entire lesson
+- Only use words a kindergartner knows
+- Only concrete things they can SEE, TOUCH, SMELL, TASTE, or HEAR
+- NO abstract concepts whatsoever
+```
+
+```typescript Banned Words
+// Complex words are strictly prohibited
+process, system, adapt, environment, organism, function,
+structure, cycle, energy, nutrient, habitat, ecosystem,
+photosynthesis, cells, molecules, chemical, reaction
+```
+</CodeGroup>
+
+### Grade 3-4 (Ages 8-10)
+
+```typescript
+// From server/prompts/grades/grade34.ts:8
+- Maximum 8 words per sentence
+- Maximum 200 words total
+- Use grade 3-4 vocabulary ONLY
+- Introduce ONE new concept at a time
+- Connect to experiences familiar to 8-10 year olds
+```
+
+### Grade 5-6 (Ages 10-12)
+
+```typescript
+// From server/prompts/grades/grade56.ts:8
+- Maximum 12 words per sentence average
+- Maximum 400 words total
+- Introduce academic vocabulary with context
+- Build conceptual understanding
+- Include cause-effect relationships
+```
+
+### Grade 7-8 (Ages 12-14)
+
+```typescript
+// From server/prompts/grades/grade78.ts:8
+- Complex sentence structures acceptable
+- Maximum 700 words total
+- Use subject-specific terminology
+- Develop multi-step reasoning
+- Include interdisciplinary connections
+```
+
+### Grade 9+ (High School)
+
+```typescript
+// From server/prompts/grades/grade9Plus.ts:8
+- No sentence structure limitations
+- 1000-2000 words as appropriate
+- Full technical vocabulary expected
+- Complex theoretical frameworks
+- Research-level thinking
+```
+
+## Lesson Structure Generation
+
+### Word Limits by Section
+
+The system enforces strict word limits to ensure appropriate content length:
+
+```typescript
+// From server/services/enhanced-lesson-service.ts:95
+function getWordLimits(gradeLevel: number) {
+  if (gradeLevel <= 2) return { 
+    total: 75, introduction: 15, key_concepts: 20, 
+    examples: 20, practice: 15, summary: 5, sentenceMax: 5 
+  };
+  if (gradeLevel <= 4) return { 
+    total: 200, introduction: 30, key_concepts: 70, 
+    examples: 50, practice: 35, summary: 15, sentenceMax: 8 
+  };
+  if (gradeLevel <= 6) return { 
+    total: 400, introduction: 60, key_concepts: 160, 
+    examples: 100, practice: 60, summary: 20, sentenceMax: 12 
+  };
+  if (gradeLevel <= 8) return { 
+    total: 700, introduction: 100, key_concepts: 280, 
+    examples: 170, practice: 100, summary: 50, sentenceMax: 18 
+  };
+  return { 
+    total: 1200, introduction: 150, key_concepts: 500, 
+    examples: 300, practice: 150, summary: 100, sentenceMax: 25 
+  };
+}
+```
+
+### Mandatory Section Ordering
+
+All lessons follow a proven pedagogical structure:
+
+1. **Introduction**: Hook + connect to prior knowledge
+2. **Key Concepts**: Core ideas with definitions
+3. **Examples**: Worked examples showing concepts in action
+4. **Practice**: Student activities or problems
+5. **Summary**: Brief recap of covered content
+
+## Content Validation
+
+The system validates all generated content to ensure quality:
+
+```typescript
+// From server/services/enhanced-lesson-service.ts:446
+export async function generateLessonWithRetry(
+  gradeLevel: number,
+  topic: string,
+  options = {}
+): Promise<EnhancedLessonSpec> {
+  const maxRetries = 3;
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const spec = await generateEnhancedLesson(
+        gradeLevel, topic, withImages, subject, difficulty
+      );
+      
+      // Validate the spec — throws if invalid
+      validateLessonSpec(spec);
+      
+      return spec;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Attempt ${attempt}/${maxRetries} failed: ${err.message}`);
+    }
+  }
+  
+  throw new Error(`Lesson generation failed after ${maxRetries} attempts`);
+}
+```
+
+### Validation Rules
+
+<Check>Lessons must have at least 2 quiz questions</Check>
+<Check>All sections must follow proper type structure</Check>
+<Check>Word counts must not exceed grade-level limits</Check>
+<Check>Image descriptions must be concrete and specific</Check>
+<Check>No references to images in lesson text</Check>
+
+## Quiz Question Generation
+
+AI generates comprehension questions tailored to each lesson:
+
+```typescript
+// From server/services/enhanced-lesson-service.ts:497
+export async function generateEnhancedQuestions(
+  enhancedLesson: EnhancedLessonSpec,
+  questionCount: number = 5
+): Promise<any[]> {
+  const lessonContent = enhancedLesson.sections
+    .map(s => `${s.title}:\n${s.content}`)
+    .join('\n\n');
+
+  const response = await askOpenRouter({
+    messages: [
+      {
+        role: 'system',
+        content: `Create ${questionCount} multiple-choice questions. 
+                  Each must have exactly 4 answer options with one correct answer.`
+      },
+      {
+        role: 'user',
+        content: `Create questions for grade ${enhancedLesson.targetGradeLevel} 
+                  lesson "${enhancedLesson.title}".\n\nLesson content:\n${lessonContent}`
+      }
+    ],
+    model: 'google/gemini-2.0-flash-001',
+    temperature: 0.7,
+  });
+  
+  return parseAndValidateQuestions(response);
+}
+```
+
+## Visual Content Generation
+
+The AI system also generates visual aids:
+
+### Image Generation
+- Uses Stability AI for photorealistic images
+- SVG generation for diagrams and illustrations
+- All images have specific, concrete descriptions
+- No text or numbers overlaid on images
+
+### Diagram Types
+- Flowcharts
+- Concept maps
+- Comparison diagrams
+- Cycle diagrams
+- Hierarchies
+
+<Info>
+The system caps images at a maximum per lesson to ensure fast loading and appropriate visual density for the grade level.
+</Info>
+
+## Mathematical Notation Rules
+
+Each grade level has appropriate mathematical notation:
+
+<Tabs>
+  <Tab title="K-2">
+    ```text
+    - Count to 20 only
+    - Simple addition: 2 + 3 = __
+    - No subtraction beyond 10
+    - Use objects: 🍎🍎 + 🍎 = __
+    ```
+  </Tab>
+  <Tab title="3-4">
+    ```text
+    - Multiplication: 7 × 8 = __
+    - Division: 56 ÷ 7 = __
+    - Fractions: 1/2, 1/4, 3/4
+    - Numbers up to 10,000
+    ```
+  </Tab>
+  <Tab title="5-6">
+    ```text
+    - Decimals: 3.45 × 2.1 = __
+    - Fractions: 3/4 + 2/3 = __
+    - Percentages: 15% of 80 = __
+    - Basic algebra: 3x + 5 = 20
+    ```
+  </Tab>
+  <Tab title="7-8">
+    ```text
+    - Linear equations: 2x + 3y = 12
+    - Exponents: 3² × 3⁴ = 3ⁿ
+    - Pythagorean theorem: a² + b² = c²
+    - Functions: f(x) = 2x + 5
+    ```
+  </Tab>
+  <Tab title="9+">
+    ```text
+    - Calculus: d/dx[f(x)], ∫f(x)dx
+    - Trigonometry: sin²θ + cos²θ = 1
+    - Matrices: [A][B] = [C]
+    - Complex numbers: z = a + bi
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Consistent Metaphors" icon="shapes">
+    AI uses ONE concrete metaphor throughout the lesson (e.g., pizza slices for fractions)
+  </Card>
+  <Card title="No False Promises" icon="shield-check">
+    Summaries only mention topics actually covered in the lesson
+  </Card>
+  <Card title="Short Paragraphs" icon="align-left">
+    Maximum 2-3 sentences per paragraph for readability
+  </Card>
+  <Card title="Vocabulary Emphasis" icon="bold">
+    **Bold** formatting for new vocabulary terms when first introduced
+  </Card>
+</CardGroup>
+
+## Related Features
+
+<CardGroup cols={3}>
+  <Card title="Grade Levels" icon="graduation-cap" href="/features/grade-levels">
+    Detailed grade-level content approaches
+  </Card>
+  <Card title="Adaptive Learning" icon="chart-line" href="/features/adaptive-learning">
+    How lessons adapt to learner performance
+  </Card>
+  <Card title="Concept Tracking" icon="brain" href="/features/concept-tracking">
+    Tracking understanding of individual concepts
+  </Card>
+</CardGroup>

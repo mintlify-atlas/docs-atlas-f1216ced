@@ -1,0 +1,158 @@
+---
+title: "Introduction"
+description: "School — anywhere under the sun. An AI tutor that adapts to your child."
+---
+
+## Your child's tutor. Their pace. Their place.
+
+Sunschool is an AI-powered tutor that meets your kid where they are — grade level, learning style, speed. Every lesson adapts in real time. No two kids get the same experience.
+
+It works on a blue-light-free e-reader tablet that runs on solar and satellite — no Wi-Fi, no outlet, no classroom required. Backyard. Beach. Backseat. If the sun's out, school's on.
+
+<CardGroup cols={2}>
+  <Card title="For Parents" icon="users" href="/parents/overview">
+    Manage your children's learning with real-time dashboards and progress tracking
+  </Card>
+  <Card title="For Learners" icon="graduation-cap" href="/learners/overview">
+    Experience personalized lessons, quizzes, and achievement tracking
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get up and running in minutes
+  </Card>
+  <Card title="Self-Host" icon="server" href="/self-hosting/overview">
+    Deploy your own instance
+  </Card>
+</CardGroup>
+
+## What kids experience
+
+<CardGroup cols={2}>
+  <Card title="Personalized Lessons" icon="book-open">
+    The AI adjusts to how your child actually learns, not a grade-wide average
+  </Card>
+  <Card title="Gamified Learning" icon="trophy">
+    Quizzes feel like games. Challenges feel like puzzles. They'll ask to do more
+  </Card>
+  <Card title="Achievements & Streaks" icon="medal">
+    Badges and milestones keep momentum going. Progress they can see and celebrate
+  </Card>
+  <Card title="Knowledge Graph" icon="diagram-project">
+    Subjects connect visually. Kids see where they've been and what's next
+  </Card>
+</CardGroup>
+
+## What parents get
+
+<Note>
+  **Open source, all the way down** — Read the code. Audit the prompts. Self-host if you want. Education you can verify, not just trust.
+</Note>
+
+- **See everything, in real time** — Live progress on strengths, gaps, and growth. Not a report card — a dashboard.
+- **Your data stays yours** — Nothing gets sold. Nothing trains a model. Export or delete anytime.
+- **All your kids, one account** — Each child gets their own adaptive path. Add learners as your family grows.
+- **Parent owns the prompt** — Every AI prompt is visible. You can see exactly what instructions the AI received before teaching your child.
+
+## The parent owns the prompt
+
+AI models are sensitive to steering. Small changes in a prompt — the instructions that tell the AI what to teach and how — can shift tone, difficulty, and emphasis in ways that aren't obvious from the output alone.
+
+If you don't know what's in the prompt, you don't really know what's in the lesson. Most ed-tech companies treat their prompts as proprietary. We think that's backwards. When it's your kid, you should be able to read every word the AI was told before it started teaching.
+
+<CardGroup cols={3}>
+  <Card title="Visible Prompts" icon="eye">
+    Parents can see the full prompt, before and after the lesson
+  </Card>
+  <Card title="Transparency" icon="shield-check">
+    AI outputs change with small tweaks — transparency isn't optional
+  </Card>
+  <Card title="Open Source" icon="code-branch">
+    The code is open. The prompts are open. Audit them, fork them, improve them
+  </Card>
+</CardGroup>
+
+## Technical Overview
+
+<Tabs>
+  <Tab title="Stack">
+    | Layer | Technology |
+    |-------|------------|
+    | Frontend | React 19 + TypeScript, React Native Web, React Query, Wouter, Vite |
+    | Backend | Node.js 22, Express.js 5, JWT auth, Drizzle ORM |
+    | Database | PostgreSQL (Neon serverless) |
+    | AI | OpenRouter API (primary), Bittensor Subnet 1 (experimental), Perplexity API |
+    | Deployment | Railway (NIXPACKS), auto-deploy on push to `main` |
+    | Testing | Jest (unit), Playwright (e2e) |
+  </Tab>
+  
+  <Tab title="Architecture">
+    ```
+    client/          React frontend (Vite)
+    server/          Express.js API with JWT auth
+    shared/          TypeScript schemas and types
+    scripts/         Database and utility scripts
+    drizzle/         Migration files
+    tests/           Playwright e2e tests
+    ```
+  </Tab>
+  
+  <Tab title="User Roles">
+    | Role | Access |
+    |------|--------|
+    | **Admin** | Full system access, user management, all data |
+    | **Parent** | Manage children, view progress, configure sync, manage rewards |
+    | **Learner** | Access lessons, take quizzes, view achievements, redeem rewards |
+  </Tab>
+</Tabs>
+
+## Key Features
+
+<AccordionGroup>
+  <Accordion title="AI-Generated Lessons">
+    Grade-specific prompts (K-2, 3-4, 5-6, 7-8, 9+) with validation that rejects placeholder content. Lessons adapt to each child's learning pace and style.
+  </Accordion>
+  
+  <Accordion title="SVG Illustrations">
+    LLM-generated educational graphics via Gemini 3.1 with model fallback chains for visual learning support.
+  </Accordion>
+  
+  <Accordion title="Parent-as-Learner Mode">
+    Parents switch to learner view to see exactly what their kids see and experience lessons firsthand.
+  </Accordion>
+  
+  <Accordion title="Concept Mastery">
+    Track performance across specific concepts with spaced repetition to reinforce learning over time.
+  </Accordion>
+  
+  <Accordion title="Gamification">
+    Points economy, parent-managed rewards shop, goal setting, and redemption approval workflow to keep kids engaged.
+  </Accordion>
+  
+  <Accordion title="Multi-Provider AI">
+    OpenRouter primary with Bittensor fallback ensures reliable lesson generation even if one provider has issues.
+  </Accordion>
+  
+  <Accordion title="Database Sync">
+    Optional external PostgreSQL connections for data backup and ownership of your family's learning data.
+  </Accordion>
+  
+  <Accordion title="Auto Migrations">
+    Schema updates applied automatically on server startup for seamless upgrades.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="play" href="/quickstart">
+    Get started in minutes with our step-by-step guide
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install and configure Sunschool for your family
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/authentication">
+    Explore the complete API documentation
+  </Card>
+  <Card title="Features" icon="sparkles" href="/features/ai-tutoring">
+    Learn about all platform capabilities
+  </Card>
+</CardGroup>

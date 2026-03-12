@@ -1,0 +1,507 @@
+---
+title: Concept Mastery Tracking
+description: How mastery is calculated, spaced repetition, performance per concept, and struggling areas identification
+icon: brain
+---
+
+## Concept Mastery Overview
+
+Sunschool tracks **mastery level** for every individual concept a learner encounters. This granular tracking enables adaptive learning, identifying both strong areas and concepts needing reinforcement.
+
+## How Mastery is Calculated
+
+Mastery is a percentage based on correct vs. total attempts for each concept.
+
+### Mastery Formula
+
+```typescript
+// From mastery-service.ts:50
+const newMasteryLevel = newTotalCount > 0 
+  ? Math.round((newCorrectCount / newTotalCount) * 100) 
+  : 0;
+```
+
+<Math>
+$$
+\text{Mastery Level} = \frac{\text{Correct Count}}{\text{Total Count}} \times 100
+$$
+</Math>
+
+**Example**:
+- 7 correct out of 10 attempts = 70% mastery
+- 3 correct out of 4 attempts = 75% mastery
+
+### Mastery Threshold
+
+```typescript
+// From mastery-service.ts:25
+const MASTERY_THRESHOLD = 70; // 70% accuracy for mastery (stored as 0-100 integer)
+```
+
+<Check>
+**Mastery is achieved at 70% accuracy**
+- Below 70%: Concept needs reinforcement
+- 70% and above: Concept is mastered
+</Check>
+
+## Concept Mastery Data Structure
+
+```typescript
+// From mastery-service.ts:12-23
+export interface ConceptMastery {
+  id?: string;
+  learnerId: number;
+  conceptName: string;
+  subject: string;
+  correctCount: number;
+  totalCount: number;
+  masteryLevel: number; // 0-100 integer
+  lastTested: Date;
+  needsReinforcement: boolean;
+  createdAt?: Date;
+}
+```
+
+### Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `conceptName` | string | Name of the concept (e.g., "Fractions", "Photosynthesis") |
+| `subject` | string | Subject area (e.g., "Math", "Science") |
+| `correctCount` | number | Times answered correctly |
+| `totalCount` | number | Total times tested on this concept |
+| `masteryLevel` | number | Percentage (0-100) |
+| `lastTested` | Date | Most recent quiz date |
+| `needsReinforcement` | boolean | True if masteryLevel < 70 |
+
+## Updating Mastery After Quizzes
+
+Mastery is updated after every quiz submission.
+
+### Single Concept Update
+
+```typescript
+// From mastery-service.ts:30-96
+export async function updateConceptMastery(
+  learnerId: number,
+  conceptName: string,
+  subject: string,
+  isCorrect: boolean
+): Promise<void> {
+  try {
+    // Check if mastery record exists
+    const existing = await db.execute(sql`
+      SELECT * FROM concept_mastery
+      WHERE learner_id = ${learnerId}
+        AND concept_name = ${conceptName}
+        AND subject = ${subject}
+    `);
+
+    if (existing.rows.length > 0) {
+      // Update existing record
+      const record = existing.rows[0] as any;
+      const newCorrectCount = record.correct_count + (isCorrect ? 1 : 0);
+      const newTotalCount = record.total_count + 1;
+      const newMasteryLevel = newTotalCount > 0 ? Math.round((newCorrectCount / newTotalCount) * 100) : 0;
+      const needsReinforcement = newMasteryLevel < MASTERY_THRESHOLD;
+
+      await db.execute(sql`
+        UPDATE concept_mastery
+        SET
+          correct_count = ${newCorrectCount},
+          total_count = ${newTotalCount},
+          mastery_level = ${newMasteryLevel},
+          last_tested = NOW(),
+          needs_reinforcement = ${needsReinforcement}
+        WHERE learner_id = ${learnerId}
+          AND concept_name = ${conceptName}
+          AND subject = ${subject}
+      `);
+    } else {
+      // Create new record
+      const masteryLevel = isCorrect ? 100 : 0;
+      const needsReinforcement = masteryLevel < MASTERY_THRESHOLD;
+
+      await db.execute(sql`
+        INSERT INTO concept_mastery (
+          learner_id,
+          concept_name,
+          subject,
+          correct_count,
+          total_count,
+          mastery_level,
+          last_tested,
+          needs_reinforcement
+        ) VALUES (
+          ${learnerId},
+          ${conceptName},
+          ${subject},
+          ${isCorrect ? 1 : 0},
+          1,
+          ${masteryLevel},
+          NOW(),
+          ${needsReinforcement}
+        )
+      `);
+    }
+  } catch (error) {
+    console.error(`Error updating mastery for concept ${conceptName}:`, error);
+    throw error;
+  }
+}
+```
+
+### Bulk Update from Quiz
+
+```typescript
+// From mastery-service.ts:98-110
+export async function updateMasteryFromQuiz(
+  learnerId: number,
+  subject: string,
+  conceptTags: string[],
+  isCorrect: boolean
+): Promise<void> {
+  for (const concept of conceptTags) {
+    await updateConceptMastery(learnerId, concept, subject, isCorrect);
+  }
+}
+
+// From mastery-service.ts:267-275
+export async function bulkUpdateMasteryFromAnswers(
+  learnerId: number,
+  subject: string,
+  conceptsAndCorrectness: Array<{ concepts: string[]; isCorrect: boolean }>
+): Promise<void> {
+  for (const { concepts, isCorrect } of conceptsAndCorrectness) {
+    await updateMasteryFromQuiz(learnerId, subject, concepts, isCorrect);
+  }
+}
+```
+
+<Info>
+Each quiz question can test multiple concepts. The `conceptTags` array allows a single question to update mastery for several related concepts.
+</Info>
+
+## Spaced Repetition
+
+The mastery system supports spaced repetition through `lastTested` tracking.
+
+### Concepts Needing Reinforcement
+
+```typescript
+// From mastery-service.ts:158-201
+export async function getConceptsNeedingReinforcement(
+  learnerId: number,
+  subject?: string,
+  limit: number = 5
+): Promise<ConceptMastery[]> {
+  try {
+    let query;
+    if (subject) {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+          AND subject = ${subject}
+          AND needs_reinforcement = true
+        ORDER BY mastery_level ASC, last_tested ASC
+        LIMIT ${limit}
+      `;
+    } else {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+          AND needs_reinforcement = true
+        ORDER BY mastery_level ASC, last_tested ASC
+        LIMIT ${limit}
+      `;
+    }
+
+    const results = await db.execute(query);
+    return results.rows.map(row => ({
+      id: (row as any).id,
+      learnerId: (row as any).learner_id,
+      conceptName: (row as any).concept_name,
+      subject: (row as any).subject,
+      correctCount: (row as any).correct_count,
+      totalCount: (row as any).total_count,
+      masteryLevel: parseFloat((row as any).mastery_level),
+      lastTested: new Date((row as any).last_tested),
+      needsReinforcement: (row as any).needs_reinforcement,
+      createdAt: (row as any).created_at ? new Date((row as any).created_at) : undefined
+    }));
+  } catch (error) {
+    console.error('Error fetching concepts needing reinforcement:', error);
+    return [];
+  }
+}
+```
+
+### Sorting Strategy
+
+```sql
+ORDER BY mastery_level ASC, last_tested ASC
+```
+
+<Steps>
+  <Step title="Primary Sort: Lowest Mastery First">
+    Concepts with the lowest mastery levels are prioritized.
+    
+    **Example**: A concept at 30% mastery comes before one at 65%.
+  </Step>
+  
+  <Step title="Secondary Sort: Oldest Tests First">
+    Among concepts with similar mastery, those not tested recently appear first.
+    
+    **Example**: Two concepts both at 60% mastery - the one last tested 2 weeks ago comes before the one tested yesterday.
+  </Step>
+</Steps>
+
+<Note>
+This sorting ensures learners review their weakest concepts first, and among weak concepts, prioritizes those that haven't been practiced recently (spaced repetition principle).
+</Note>
+
+## Performance Per Concept
+
+### Viewing All Mastery
+
+```typescript
+// From mastery-service.ts:113-153
+export async function getLearnerMastery(
+  learnerId: number,
+  subject?: string
+): Promise<ConceptMastery[]> {
+  try {
+    let query;
+    if (subject) {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+          AND subject = ${subject}
+        ORDER BY mastery_level ASC, last_tested DESC
+      `;
+    } else {
+      query = sql`
+        SELECT * FROM concept_mastery
+        WHERE learner_id = ${learnerId}
+        ORDER BY subject, mastery_level ASC
+      `;
+    }
+
+    const results = await db.execute(query);
+    return results.rows.map(row => ({
+      id: (row as any).id,
+      learnerId: (row as any).learner_id,
+      conceptName: (row as any).concept_name,
+      subject: (row as any).subject,
+      correctCount: (row as any).correct_count,
+      totalCount: (row as any).total_count,
+      masteryLevel: parseFloat((row as any).mastery_level),
+      lastTested: new Date((row as any).last_tested),
+      needsReinforcement: (row as any).needs_reinforcement,
+      createdAt: (row as any).created_at ? new Date((row as any).created_at) : undefined
+    }));
+  } catch (error) {
+    console.error('Error fetching learner mastery:', error);
+    return [];
+  }
+}
+```
+
+### Mastery Summary
+
+```typescript
+// From mastery-service.ts:206-261
+export async function getMasterySummary(
+  learnerId: number
+): Promise<{
+  totalConcepts: number;
+  masteredConcepts: number;
+  needsReinforcementCount: number;
+  averageMastery: number;
+  bySubject: Record<string, { mastered: number; total: number; avgMastery: number }>;
+}> {
+  try {
+    const allMastery = await getLearnerMastery(learnerId);
+
+    const totalConcepts = allMastery.length;
+    const masteredConcepts = allMastery.filter(m => m.masteryLevel >= MASTERY_THRESHOLD).length;
+    const needsReinforcementCount = allMastery.filter(m => m.needsReinforcement).length;
+    const averageMastery =
+      totalConcepts > 0
+        ? allMastery.reduce((sum, m) => sum + m.masteryLevel, 0) / totalConcepts
+        : 0;
+
+    // Calculate by subject
+    const bySubject: Record<string, { mastered: number; total: number; avgMastery: number }> = {};
+    for (const mastery of allMastery) {
+      if (!bySubject[mastery.subject]) {
+        bySubject[mastery.subject] = { mastered: 0, total: 0, avgMastery: 0 };
+      }
+      bySubject[mastery.subject].total++;
+      if (mastery.masteryLevel >= MASTERY_THRESHOLD) {
+        bySubject[mastery.subject].mastered++;
+      }
+      bySubject[mastery.subject].avgMastery += mastery.masteryLevel;
+    }
+
+    // Calculate averages
+    for (const subject in bySubject) {
+      bySubject[subject].avgMastery /= bySubject[subject].total;
+    }
+
+    return {
+      totalConcepts,
+      masteredConcepts,
+      needsReinforcementCount,
+      averageMastery,
+      bySubject
+    };
+  } catch (error) {
+    console.error('Error calculating mastery summary:', error);
+    return {
+      totalConcepts: 0,
+      masteredConcepts: 0,
+      needsReinforcementCount: 0,
+      averageMastery: 0,
+      bySubject: {}
+    };
+  }
+}
+```
+
+**Example Summary**:
+```json
+{
+  "totalConcepts": 24,
+  "masteredConcepts": 18,
+  "needsReinforcementCount": 6,
+  "averageMastery": 75.5,
+  "bySubject": {
+    "Math": {
+      "mastered": 10,
+      "total": 15,
+      "avgMastery": 72.3
+    },
+    "Science": {
+      "mastered": 8,
+      "total": 9,
+      "avgMastery": 84.1
+    }
+  }
+}
+```
+
+## Struggling Areas Identification
+
+### Profile Storage
+
+```typescript
+// From shared/schema.ts:64
+strugglingAreas: json("struggling_areas").$type<string[]>().default([])
+```
+
+The learner profile stores a list of struggling areas:
+
+```json
+{
+  "strugglingAreas": [
+    "Fractions",
+    "Multiplication Tables",
+    "Verb Conjugation"
+  ]
+}
+```
+
+### Automatic Detection
+
+Struggling areas can be automatically populated by querying mastery:
+
+```typescript
+// Pseudo-code for detecting struggling areas
+const strugglingConcepts = await getConceptsNeedingReinforcement(learnerId, undefined, 10);
+const strugglingAreas = strugglingConcepts.map(c => c.conceptName);
+
+// Update profile
+await db.execute(sql`
+  UPDATE learner_profiles
+  SET struggling_areas = ${JSON.stringify(strugglingAreas)}
+  WHERE user_id = ${learnerId}
+`);
+```
+
+### Visual Indicators
+
+Struggling areas can be highlighted in the UI:
+
+<Tabs>
+  <Tab title="Knowledge Graph">
+    Nodes for struggling concepts shown in orange/red
+  </Tab>
+  
+  <Tab title="Progress Dashboard">
+    "Needs Practice" section with struggling concepts listed
+  </Tab>
+  
+  <Tab title="Lesson Recommendations">
+    Adaptive lesson suggestions focus on struggling areas
+  </Tab>
+</Tabs>
+
+## Integration with Quiz System
+
+Mastery tracking is updated during quiz submission:
+
+```typescript
+// From quiz-page.tsx:118-126 (invalidating mastery queries)
+onSuccess: (data) => {
+  // ... other updates
+  queryClient.invalidateQueries({ queryKey: ['/api/mastery'] });
+  if (lesson?.learnerId) {
+    queryClient.invalidateQueries({ 
+      queryKey: ['/api/learner-profile', lesson.learnerId] 
+    });
+  }
+}
+```
+
+After quiz submission:
+1. **Points awarded** based on correct answers
+2. **Mastery updated** for each concept tested
+3. **Knowledge graph updated** with new nodes/edges
+4. **Struggling areas recalculated** based on new mastery data
+
+## API Endpoints
+
+<CodeGroup>
+```typescript GET /api/mastery
+// Get all mastery records for a learner
+const mastery = await getLearnerMastery(learnerId);
+```
+
+```typescript GET /api/mastery/:subject
+// Get mastery for specific subject
+const mathMastery = await getLearnerMastery(learnerId, 'Math');
+```
+
+```typescript GET /api/mastery/summary
+// Get aggregated mastery statistics
+const summary = await getMasterySummary(learnerId);
+```
+
+```typescript GET /api/mastery/reinforcement
+// Get concepts needing practice
+const concepts = await getConceptsNeedingReinforcement(learnerId, 'Math', 5);
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Knowledge Graph" icon="network-wired" href="/learners/knowledge-graph">
+    See how mastery connects to the visual learning map
+  </Card>
+  
+  <Card title="Adaptive Learning" icon="graduation-cap" href="/features/adaptive-learning">
+    Learn how mastery drives personalized lesson recommendations
+  </Card>
+</CardGroup>

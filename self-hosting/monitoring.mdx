@@ -1,0 +1,695 @@
+---
+title: Monitoring and Health
+description: Health checks, logging, and performance monitoring
+icon: chart-line
+---
+
+## Health Check Endpoint
+
+Sunschool includes a built-in health check endpoint for monitoring and load balancer integration.
+
+From `server/auth.ts`:
+
+```typescript
+app.get("/api/healthcheck", asyncHandler(async (req, res) => {
+  try {
+    // Count users for basic DB query test
+    const result = await db.select({ count: count() }).from(users);
+    const userCount = result[0]?.count || 0;
+    
+    return res.json({ 
+      status: "ok", 
+      db: "connected",
+      userCount 
+    });
+  } catch (error) {
+    console.error("Health check error:", error);
+    return res.status(500).json({ 
+      status: "error",
+      message: "Database connection failed",
+      error: (error as Error).message 
+    });
+  }
+}));
+```
+
+### Test Health Endpoint
+
+```bash
+# Check server health
+curl http://localhost:5000/api/healthcheck
+
+# Success response:
+{
+  "status": "ok",
+  "db": "connected",
+  "userCount": 42
+}
+
+# Error response (database down):
+{
+  "status": "error",
+  "message": "Database connection failed",
+  "error": "Connection refused"
+}
+```
+
+### Railway Health Checks
+
+From `ENGINEERING.md`:
+
+> Health check at `/api/healthcheck` (60s timeout, restart on failure, max 3 retries)
+
+Railway configuration in `railway.json`:
+
+```json
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "healthcheckPath": "/api/healthcheck",
+    "healthcheckTimeout": 60,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+}
+```
+
+**Health check behavior:**
+- Railway pings `/api/healthcheck` every 30 seconds
+- 60-second timeout for response
+- If 3 consecutive failures, container restarts
+- Zero-downtime during health check failures
+
+### Custom Health Checks
+
+Extend the health check with additional diagnostics:
+
+```typescript
+app.get("/api/healthcheck", asyncHandler(async (req, res) => {
+  const checks = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    database: 'unknown',
+    ai_provider: 'unknown'
+  };
+  
+  // Database check
+  try {
+    await db.select({ count: count() }).from(users);
+    checks.database = 'connected';
+  } catch (error) {
+    checks.database = 'error';
+    checks.status = 'degraded';
+  }
+  
+  // AI provider check (optional)
+  if (OPENROUTER_API_KEY) {
+    checks.ai_provider = 'configured';
+  }
+  
+  const statusCode = checks.status === 'ok' ? 200 : 503;
+  res.status(statusCode).json(checks);
+}));
+```
+
+## Logging
+
+### Server Logs
+
+Sunschool uses `console.log` for application logging:
+
+```typescript
+// Success logs
+console.log('[BG] Images generated for lesson', lessonId);
+console.log('✅ Migrations applied successfully');
+
+// Error logs
+console.error('Bittensor chat failed:', error);
+console.error('⚠️ Migration failed:', error);
+
+// Warning logs
+console.warn('Bittensor requested but not enabled. Falling back to OpenRouter.');
+```
+
+### Log Levels
+
+<Tabs>
+  <Tab title="Development">
+    ```bash
+    npm run dev
+    
+    # Verbose output:
+    # [Server] Starting on port 5000
+    # [DB] Connected to postgresql://localhost:5432/sunschool
+    # [Auth] User login: admin (role: ADMIN)
+    # [Lesson] Generating lesson for grade 5: Photosynthesis
+    # [BG] Images generated for lesson abc-123
+    ```
+  </Tab>
+  <Tab title="Production">
+    ```bash
+    npm start
+    
+    # Minimal output:
+    # Server listening on port 5000
+    # ✅ Migrations applied
+    # Error: Database connection lost (automatic retry)
+    ```
+  </Tab>
+</Tabs>
+
+### Structured Logging
+
+<Info>
+  **Not implemented by default.** Add structured logging for production monitoring.
+</Info>
+
+**Recommended: Winston**
+
+```bash
+npm install winston
+```
+
+```typescript
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' }),
+  ],
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.simple(),
+  }));
+}
+
+// Usage
+logger.info('User login', { userId: user.id, role: user.role });
+logger.error('Database error', { error: error.message, stack: error.stack });
+```
+
+### Railway Logs
+
+**Access logs via Railway CLI:**
+
+```bash
+# Stream logs
+railway logs
+
+# Filter by service
+railway logs --service sunschool
+
+# Show last 100 lines
+railway logs --tail 100
+
+# Follow live
+railway logs --follow
+```
+
+**Log retention:**
+- Railway Free: 7 days
+- Railway Pro: 30 days
+
+## Error Tracking
+
+### Server Errors
+
+From `server/middleware/auth.ts`:
+
+```typescript
+export function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) {
+  return function(req: Request, res: Response, next: NextFunction): Promise<void> {
+    return Promise
+      .resolve(fn(req, res, next))
+      .catch((error) => {
+        console.error('Unhandled API error:', error);
+        
+        if (res.headersSent) {
+          return next(error);
+        }
+        
+        // For auth endpoints, provide specific error handling
+        if (req.path.includes('/api/login') || req.path.includes('/api/register')) {
+          res.status(500).json({
+            error: 'Authentication service error',
+            message: error.message || 'An unexpected error occurred'
+          });
+          return;
+        }
+        
+        next(error);
+      });
+  };
+}
+```
+
+### Error Response Format
+
+**Production (NODE_ENV=production):**
+
+```json
+{
+  "error": "Failed to generate lesson content"
+}
+```
+
+**Development:**
+
+```json
+{
+  "error": "Failed to generate lesson content",
+  "details": "OpenRouter API rate limit exceeded",
+  "stack": "Error: Rate limit\n    at generateLesson (server/services/ai.ts:45:10)"
+}
+```
+
+### Sentry Integration
+
+<Info>
+  **Recommended for production.** Track errors with context and stack traces.
+</Info>
+
+```bash
+npm install @sentry/node
+```
+
+```typescript
+import * as Sentry from "@sentry/node";
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: 0.1,
+});
+
+// Add to error handler
+app.use(Sentry.Handlers.errorHandler());
+
+// Manual error reporting
+try {
+  await generateLesson(topic, gradeLevel);
+} catch (error) {
+  Sentry.captureException(error, {
+    tags: { topic, gradeLevel },
+    user: { id: req.user.id }
+  });
+  throw error;
+}
+```
+
+## Performance Monitoring
+
+### Database Connection Pooling
+
+From `server/db.ts`:
+
+```typescript
+export const pool = new Pool({ 
+  connectionString: DATABASE_URL,
+  max: 10,  // Maximum connections
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+// Keep-alive for Neon serverless
+setInterval(() => {
+  pool.query('SELECT 1');
+}, 120000); // 2 minutes
+```
+
+**Monitor pool stats:**
+
+```typescript
+app.get('/api/admin/pool-status', hasRole(['ADMIN']), (req, res) => {
+  res.json({
+    totalCount: pool.totalCount,
+    idleCount: pool.idleCount,
+    waitingCount: pool.waitingCount,
+  });
+});
+```
+
+### Response Times
+
+Track endpoint performance:
+
+```typescript
+import responseTime from 'response-time';
+
+app.use(responseTime((req, res, time) => {
+  if (time > 1000) {  // Log slow requests
+    console.warn(`Slow request: ${req.method} ${req.url} took ${time}ms`);
+  }
+  
+  // Optional: Send to metrics service
+  // metrics.timing('http.response_time', time, { path: req.path });
+}));
+```
+
+### Memory Usage
+
+```typescript
+app.get('/api/admin/metrics', hasRole(['ADMIN']), (req, res) => {
+  const usage = process.memoryUsage();
+  res.json({
+    rss: `${Math.round(usage.rss / 1024 / 1024)} MB`,
+    heapTotal: `${Math.round(usage.heapTotal / 1024 / 1024)} MB`,
+    heapUsed: `${Math.round(usage.heapUsed / 1024 / 1024)} MB`,
+    external: `${Math.round(usage.external / 1024 / 1024)} MB`,
+    uptime: `${Math.round(process.uptime() / 60)} minutes`,
+  });
+});
+```
+
+## Application Metrics
+
+### User Activity
+
+From `server/services/activity-service.ts` (if implemented):
+
+```typescript
+// Track active users
+const activeUsers = new Set();
+
+app.use(isAuthenticated, (req, res, next) => {
+  if (req.user) {
+    activeUsers.add(req.user.id);
+    setTimeout(() => activeUsers.delete(req.user.id), 300000); // 5 min
+  }
+  next();
+});
+
+// Metrics endpoint
+app.get('/api/admin/metrics/users', hasRole(['ADMIN']), (req, res) => {
+  res.json({
+    activeUsers: activeUsers.size,
+    timestamp: new Date().toISOString(),
+  });
+});
+```
+
+### Lesson Generation Metrics
+
+```typescript
+let lessonStats = {
+  total: 0,
+  successful: 0,
+  failed: 0,
+  avgDuration: 0,
+};
+
+// Track in lesson generation
+const startTime = Date.now();
+try {
+  const lesson = await generateLessonWithRetry(...);
+  lessonStats.total++;
+  lessonStats.successful++;
+  lessonStats.avgDuration = 
+    (lessonStats.avgDuration * (lessonStats.total - 1) + (Date.now() - startTime)) / lessonStats.total;
+} catch (error) {
+  lessonStats.total++;
+  lessonStats.failed++;
+  throw error;
+}
+```
+
+## Alerting
+
+### Railway Alerts
+
+Configure alerts in Railway dashboard:
+
+- **Health check failures** - Email/Slack on 3+ consecutive failures
+- **High memory usage** - Alert when > 90% of allocated memory
+- **Deployment failures** - Notify on failed builds
+- **Database connection issues** - Alert on connection pool exhaustion
+
+### Custom Alerts
+
+**Email on critical errors:**
+
+```typescript
+import nodemailer from 'nodemailer';
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: 587,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+async function sendAlert(subject: string, message: string) {
+  if (process.env.NODE_ENV !== 'production') return;
+  
+  await transporter.sendMail({
+    from: 'alerts@sunschool.xyz',
+    to: process.env.ADMIN_EMAIL,
+    subject: `[Sunschool Alert] ${subject}`,
+    text: message,
+  });
+}
+
+// Usage
+try {
+  await migrate(db, { migrationsFolder: './drizzle/migrations' });
+} catch (error) {
+  await sendAlert('Migration Failed', error.message);
+  throw error;
+}
+```
+
+### Slack Integration
+
+```bash
+npm install @slack/webhook
+```
+
+```typescript
+import { IncomingWebhook } from '@slack/webhook';
+
+const webhook = new IncomingWebhook(process.env.SLACK_WEBHOOK_URL);
+
+async function notifySlack(message: string, level: 'info' | 'warning' | 'error') {
+  const colors = { info: '#36a64f', warning: '#ff9900', error: '#ff0000' };
+  
+  await webhook.send({
+    attachments: [{
+      color: colors[level],
+      title: 'Sunschool Alert',
+      text: message,
+      ts: Math.floor(Date.now() / 1000).toString(),
+    }]
+  });
+}
+
+// Usage
+await notifySlack('Database migration completed successfully', 'info');
+await notifySlack('OpenRouter API rate limit reached', 'warning');
+await notifySlack('Critical: Database connection lost', 'error');
+```
+
+## Monitoring Dashboard
+
+### Recommended Tools
+
+<Tabs>
+  <Tab title="Grafana + Prometheus">
+    **Full-featured monitoring stack:**
+    
+    ```yaml
+    # docker-compose.yml
+    version: '3'
+    services:
+      prometheus:
+        image: prom/prometheus
+        ports:
+          - 9090:9090
+        volumes:
+          - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      
+      grafana:
+        image: grafana/grafana
+        ports:
+          - 3000:3000
+        environment:
+          - GF_SECURITY_ADMIN_PASSWORD=admin
+    ```
+    
+    **Metrics:**
+    - Request rates and latencies
+    - Database connection pool
+    - Memory and CPU usage
+    - Custom business metrics
+  </Tab>
+  <Tab title="Datadog">
+    **Managed APM solution:**
+    
+    ```bash
+    npm install dd-trace
+    ```
+    
+    ```typescript
+    // Must be first import
+    import 'dd-trace/init';
+    
+    // Automatic instrumentation for:
+    // - HTTP requests
+    // - Database queries
+    // - Error tracking
+    // - Performance profiling
+    ```
+  </Tab>
+  <Tab title="New Relic">
+    **Application performance monitoring:**
+    
+    ```bash
+    npm install newrelic
+    ```
+    
+    ```typescript
+    // Add to top of server/index.ts
+    require('newrelic');
+    
+    // Auto-instruments:
+    // - Express routes
+    // - PostgreSQL queries
+    // - External API calls
+    ```
+  </Tab>
+</Tabs>
+
+### Custom Metrics Endpoint
+
+```typescript
+app.get('/api/admin/metrics', hasRole(['ADMIN']), async (req, res) => {
+  const metrics = {
+    server: {
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      cpu: process.cpuUsage(),
+    },
+    database: {
+      poolSize: pool.totalCount,
+      idleConnections: pool.idleCount,
+      waitingClients: pool.waitingCount,
+    },
+    users: {
+      total: await db.select({ count: count() }).from(users),
+      active: activeUsers.size,
+    },
+    lessons: {
+      generated: lessonStats.total,
+      successful: lessonStats.successful,
+      failed: lessonStats.failed,
+      avgDuration: lessonStats.avgDuration,
+    },
+  };
+  
+  res.json(metrics);
+});
+```
+
+## Troubleshooting with Logs
+
+### Common Log Patterns
+
+<AccordionGroup>
+  <Accordion title="Migration failures">
+    **Log pattern:**
+    ```
+    ⚠️ Migration failed (server continues): Error: column "new_field" already exists
+    ```
+    
+    **Diagnosis:** Migration partially applied or run twice.
+    
+    **Fix:** Check `drizzle_migrations` table, manually reconcile schema.
+  </Accordion>
+  
+  <Accordion title="Database connection errors">
+    **Log pattern:**
+    ```
+    Health check error: Connection refused
+    Error: ECONNREFUSED postgresql://localhost:5432
+    ```
+    
+    **Diagnosis:** PostgreSQL not running or wrong DATABASE_URL.
+    
+    **Fix:** Verify database status and connection string.
+  </Accordion>
+  
+  <Accordion title="AI provider failures">
+    **Log pattern:**
+    ```
+    Bittensor chat failed: Error: timeout after 10000ms
+    Falling back to OpenRouter
+    ```
+    
+    **Diagnosis:** Bittensor unavailable, automatic fallback working.
+    
+    **Action:** Monitor fallback frequency, consider disabling Bittensor if unreliable.
+  </Accordion>
+  
+  <Accordion title="Memory warnings">
+    **Log pattern:**
+    ```
+    <--- Last few GCs --->
+    [12345:0x...]   180000 ms: Mark-sweep 1500.0 (1600.0) -> 1450.0 (1600.0) MB
+    
+    <--- JS stacktrace --->
+    FATAL ERROR: Reached heap limit
+    ```
+    
+    **Diagnosis:** Memory leak or insufficient memory allocation.
+    
+    **Fix:** Increase memory limit (`NODE_OPTIONS=--max-old-space-size=2048`) or fix leak.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Steps>
+  <Step title="Enable Health Checks">
+    Configure load balancer or orchestrator to poll `/api/healthcheck`
+  </Step>
+  <Step title="Structured Logging">
+    Use Winston or Pino for JSON logs with context
+  </Step>
+  <Step title="Error Tracking">
+    Integrate Sentry for production error monitoring
+  </Step>
+  <Step title="Performance Metrics">
+    Track response times, database queries, AI generation duration
+  </Step>
+  <Step title="Alerting">
+    Set up alerts for critical errors, health check failures, high resource usage
+  </Step>
+  <Step title="Log Retention">
+    Archive logs for compliance (30+ days recommended)
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Troubleshooting" icon="bug" href="/self-hosting/troubleshooting">
+    Debug common issues with logs and metrics
+  </Card>
+  <Card title="Security" icon="shield" href="/self-hosting/security">
+    Secure monitoring endpoints and log sensitive data
+  </Card>
+</CardGroup>

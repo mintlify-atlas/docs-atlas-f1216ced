@@ -1,0 +1,281 @@
+---
+title: 'Lessons'
+description: 'Create, retrieve, and manage AI-generated lessons'
+icon: 'book-open'
+---
+
+## Get Active Lesson
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/lessons/active
+curl -X GET https://api.sunschool.xyz/api/lessons/active \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="learnerId" type="string">
+  Learner ID to get active lesson for (defaults to authenticated user)
+</ParamField>
+
+Returns the currently active lesson for the learner, or `null` if none exists.
+
+### Response
+
+```json Response Example
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "learnerId": 3,
+  "moduleId": "custom-1705320600000",
+  "status": "ACTIVE",
+  "subject": "Math",
+  "category": "STEM",
+  "difficulty": "beginner",
+  "score": null,
+  "spec": {
+    "topic": "Addition",
+    "learningObjectives": ["Understand basic addition"],
+    "questions": [...]
+  },
+  "imagePaths": [],
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Error Codes
+
+- **401** - Unauthorized
+- **500** - Failed to fetch active lesson
+
+---
+
+## Create Custom Lesson
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash POST /api/lessons/create
+curl -X POST https://api.sunschool.xyz/api/lessons/create \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "Multiplication",
+    "gradeLevel": 5,
+    "learnerId": "3",
+    "subject": "Math",
+    "category": "STEM",
+    "difficulty": "beginner"
+  }'
+```
+
+<ParamField body="gradeLevel" type="number" required>
+  Grade level for the lesson (K-12)
+</ParamField>
+
+<ParamField body="learnerId" type="string" required>
+  ID of the learner this lesson is for
+</ParamField>
+
+<ParamField body="topic" type="string">
+  Lesson topic (can be empty for random topic)
+</ParamField>
+
+<ParamField body="subject" type="string">
+  Subject area (e.g., "Math", "Science")
+</ParamField>
+
+<ParamField body="category" type="string">
+  Subject category
+</ParamField>
+
+<ParamField body="difficulty" type="string">
+  Difficulty level: `beginner`, `intermediate`, or `advanced`
+</ParamField>
+
+### Authorization
+
+- **LEARNER**: Can only create lessons for themselves
+- **PARENT**: Can create lessons for their children
+- **ADMIN**: Can create lessons for any learner
+
+<Warning>
+  Creating a new lesson automatically retires any existing ACTIVE lesson for that learner.
+  Lesson images are generated in the background after the lesson is created.
+</Warning>
+
+### Response
+
+<ResponseField name="id" type="string">
+  Lesson UUID
+</ResponseField>
+
+<ResponseField name="learnerId" type="number">
+  Learner user ID
+</ResponseField>
+
+<ResponseField name="moduleId" type="string">
+  Module identifier
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Lesson status (ACTIVE, DONE, or QUEUED)
+</ResponseField>
+
+<ResponseField name="subject" type="string">
+  Subject area
+</ResponseField>
+
+<ResponseField name="category" type="string">
+  Subject category
+</ResponseField>
+
+<ResponseField name="difficulty" type="string">
+  Difficulty level
+</ResponseField>
+
+<ResponseField name="spec" type="object">
+  <Expandable title="properties">
+    <ResponseField name="topic" type="string">
+      Lesson topic
+    </ResponseField>
+    <ResponseField name="learningObjectives" type="array">
+      Array of learning objectives
+    </ResponseField>
+    <ResponseField name="questions" type="array">
+      Array of quiz questions
+    </ResponseField>
+    <ResponseField name="images" type="array">
+      Generated images (populated after background processing)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json Response Example
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "learnerId": 3,
+  "moduleId": "custom-1705320600000",
+  "status": "ACTIVE",
+  "subject": "Math",
+  "category": "STEM",
+  "difficulty": "beginner",
+  "spec": {
+    "topic": "Multiplication",
+    "learningObjectives": [
+      "Understand multiplication as repeated addition",
+      "Solve basic multiplication problems"
+    ],
+    "questions": [
+      {
+        "question": "What is 3 × 4?",
+        "choices": ["7", "12", "10", "15"],
+        "correctIndex": 1,
+        "explanation": "3 × 4 means adding 3 four times: 3+3+3+3 = 12"
+      }
+    ]
+  },
+  "imagePaths": [],
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Error Codes
+
+- **400** - Missing required fields: gradeLevel, learnerId
+- **403** - Forbidden (insufficient permissions)
+- **404** - Learner profile not found
+- **503** - Lesson generation failed after multiple attempts
+- **500** - Failed to generate lesson content
+
+---
+
+## Get Lesson by ID
+
+<Note>
+  **Authentication Required:** Any authenticated user with access to the lesson
+</Note>
+
+```bash GET /api/lessons/:lessonId
+curl -X GET https://api.sunschool.xyz/api/lessons/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="lessonId" type="string" required>
+  Lesson UUID
+</ParamField>
+
+### Authorization
+
+- **ADMIN**: Can access any lesson
+- **LEARNER**: Can access their own lessons
+- **PARENT**: Can access their children's lessons
+
+### Response
+
+Returns the complete lesson object (same structure as Create Lesson response).
+
+### Error Codes
+
+- **401** - Unauthorized
+- **403** - Forbidden
+- **404** - Lesson not found
+
+---
+
+## Get Lesson History
+
+<Note>
+  **Authentication Required:** Any authenticated user
+</Note>
+
+```bash GET /api/lessons
+curl -X GET https://api.sunschool.xyz/api/lessons?learnerId=3&limit=20 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField query="learnerId" type="string" required>
+  Learner ID to get lesson history for (required for PARENT/ADMIN, defaults to authenticated user for LEARNER)
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Maximum number of lessons to return (default: 10)
+</ParamField>
+
+### Authorization
+
+- **LEARNER**: Can only access their own history
+- **PARENT**: Can access their children's history with learnerId query param
+- **ADMIN**: Can access any learner's history
+
+### Response
+
+```json Response Example
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "learnerId": 3,
+    "status": "DONE",
+    "subject": "Math",
+    "difficulty": "beginner",
+    "score": 85,
+    "createdAt": "2024-01-15T10:30:00.000Z"
+  },
+  {
+    "id": "660e8400-e29b-41d4-a716-446655440001",
+    "learnerId": 3,
+    "status": "DONE",
+    "subject": "Science",
+    "difficulty": "beginner",
+    "score": 92,
+    "createdAt": "2024-01-14T09:15:00.000Z"
+  }
+]
+```
+
+### Error Codes
+
+- **400** - learnerId is required
+- **401** - Unauthorized
+- **403** - Forbidden

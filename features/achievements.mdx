@@ -1,0 +1,384 @@
+---
+title: Achievements
+description: Milestone rewards and recognition system in Sunschool
+icon: trophy
+---
+
+## Overview
+
+Sunschool's achievement system recognizes learner milestones with special badges and bonus points. Achievements celebrate progress and motivate continued learning.
+
+## Achievement Types
+
+The system currently tracks several achievement types:
+
+```typescript
+// From server/utils.ts:26
+export function checkForAchievements(
+  lessonHistory: Lesson[], 
+  completedLesson?: Lesson
+) {
+  const achievements: {
+    type: string;
+    payload: {
+      title: string;
+      description: string;
+      icon: string;
+    };
+  }[] = [];
+  
+  // Check for various achievement conditions...
+  return achievements;
+}
+```
+
+### Available Achievements
+
+<CardGroup cols={2}>
+  <Card title="First Steps" icon="shoe-prints">
+    **Trigger**: Complete your very first lesson
+    
+    **Icon**: award
+    
+    **Points**: 100 bonus points
+  </Card>
+  
+  <Card title="Learning Explorer" icon="compass">
+    **Trigger**: Complete 5 lessons
+    
+    **Icon**: book-open
+    
+    **Points**: 250 bonus points
+  </Card>
+  
+  <Card title="Perfect Score" icon="star">
+    **Trigger**: Get 100% on any quiz
+    
+    **Icon**: star
+    
+    **Points**: 50 bonus points
+    
+    **Note**: Repeatable - earned each time you get a perfect score
+  </Card>
+</CardGroup>
+
+## Achievement Checking Logic
+
+Achievements are checked automatically after lesson completion:
+
+### First Steps Achievement
+
+```typescript
+// From server/utils.ts:37
+// First lesson completed
+if (lessonHistory.filter(l => l.status === "DONE").length === 1) {
+  achievements.push({
+    type: "FIRST_LESSON",
+    payload: {
+      title: "First Steps",
+      description: "Completed your very first lesson!",
+      icon: "award"
+    }
+  });
+}
+```
+
+<Info>
+This achievement triggers only when the count of completed lessons (`status === "DONE"`) equals exactly 1.
+</Info>
+
+### Learning Explorer Achievement
+
+```typescript
+// From server/utils.ts:48
+// 5 lessons completed
+if (lessonHistory.filter(l => l.status === "DONE").length === 5) {
+  achievements.push({
+    type: "FIVE_LESSONS",
+    payload: {
+      title: "Learning Explorer",
+      description: "Completed 5 lessons!",
+      icon: "book-open"
+    }
+  });
+}
+```
+
+### Perfect Score Achievement
+
+```typescript
+// From server/utils.ts:60
+// Perfect score on a quiz
+if (completedLesson && completedLesson.score === 100) {
+  achievements.push({
+    type: "PERFECT_SCORE",
+    payload: {
+      title: "Perfect Score!",
+      description: "Got all answers correct in a quiz!",
+      icon: "star"
+    }
+  });
+}
+```
+
+<Warning>
+The Perfect Score achievement is **repeatable** — it can be earned multiple times. Other achievements are **one-time** only.
+</Warning>
+
+## Achievement Structure
+
+Each achievement follows this structure:
+
+```typescript
+interface Achievement {
+  type: string;           // Unique identifier (e.g., "FIRST_LESSON")
+  payload: {
+    title: string;        // Display name (e.g., "First Steps")
+    description: string;  // What was accomplished
+    icon: string;         // Icon name from icon library
+  };
+}
+```
+
+### Example Achievement Data
+
+```json
+{
+  "type": "FIVE_LESSONS",
+  "payload": {
+    "title": "Learning Explorer",
+    "description": "Completed 5 lessons!",
+    "icon": "book-open"
+  }
+}
+```
+
+## One-Time vs. Repeatable
+
+<Tabs>
+  <Tab title="One-Time Achievements">
+    These achievements can only be earned once:
+    
+    - **First Steps**: First lesson completed
+    - **Learning Explorer**: 5 lessons completed
+    
+    The system checks for exact counts (e.g., `=== 1`, `=== 5`) to ensure they only trigger once.
+  </Tab>
+  
+  <Tab title="Repeatable Achievements">
+    These achievements can be earned multiple times:
+    
+    - **Perfect Score**: Every time a quiz is completed with 100%
+    
+    No count check is performed — just the condition (score === 100).
+  </Tab>
+</Tabs>
+
+## Token Rewards
+
+When an achievement is unlocked, bonus points are awarded:
+
+| Achievement | Points | Type |
+|-------------|--------|------|
+| First Steps | 100 | One-time |
+| Learning Explorer | 250 | One-time |
+| Perfect Score | 50 | Repeatable |
+
+<Info>
+Achievement points are awarded through the [Points System](/features/points-system) with source type `ACHIEVEMENT`.
+</Info>
+
+## Visual Presentation
+
+When achievements are earned, they're displayed with:
+
+1. **Confetti Animation**: Celebratory visual effect
+2. **Badge Display**: Icon, title, and description
+3. **Point Award Notification**: Shows bonus points earned
+4. **Sound Effect** (optional): Audio feedback
+
+### AchievementBadge Component
+
+The UI displays achievements using a dedicated component:
+
+```typescript
+// From client/src/components/AchievementBadge.tsx
+interface AchievementBadgeProps {
+  achievement: {
+    title: string;
+    description: string;
+    icon: string;
+  };
+  size?: 'small' | 'medium' | 'large';
+}
+```
+
+### AchievementUnlock Animation
+
+When unlocked, achievements display with:
+
+```typescript
+// From client/src/components/AchievementUnlock.tsx
+- Fade-in animation
+- Icon pulse effect
+- Confetti particles
+- Auto-dismiss after 5 seconds
+```
+
+## Checking for Achievements
+
+Achievements are checked after lesson completion:
+
+<Steps>
+  <Step title="Lesson Completed">
+    User finishes a lesson and submits quiz answers
+  </Step>
+  <Step title="Calculate Score">
+    System calculates the quiz score (0-100%)
+  </Step>
+  <Step title="Update Lesson History">
+    Lesson is marked as "DONE" and added to history
+  </Step>
+  <Step title="Check Achievements">
+    `checkForAchievements()` is called with full lesson history
+  </Step>
+  <Step title="Award New Achievements">
+    Any newly earned achievements are recorded and points awarded
+  </Step>
+  <Step title="Display to User">
+    Achievement unlock animation shows to learner
+  </Step>
+</Steps>
+
+## Achievement History
+
+All earned achievements are stored in the learner's profile:
+
+```typescript
+interface LearnerProfile {
+  // ... other fields
+  achievements: Achievement[];  // Array of earned achievements
+  achievementDates: Record<string, Date>;  // When each was earned
+}
+```
+
+### Querying Achievements
+
+To get a learner's achievements:
+
+```typescript
+const profile = await getLearnerProfile(learnerId);
+const achievements = profile.achievements || [];
+
+console.log(`${profile.name} has earned ${achievements.length} achievements`);
+```
+
+## Future Achievement Ideas
+
+<AccordionGroup>
+  <Accordion title="Lesson Streak">
+    Complete lessons on consecutive days
+    - 3 day streak: 75 points
+    - 7 day streak: 200 points
+    - 30 day streak: 1000 points
+  </Accordion>
+  
+  <Accordion title="Subject Master">
+    Reach "Advanced" mastery level in any subject
+    - One subject: 150 points
+    - Three subjects: 500 points
+    - Five subjects: 1200 points
+  </Accordion>
+  
+  <Accordion title="Quiz Champion">
+    Perfect scores in a row
+    - 3 perfect scores: 100 points
+    - 5 perfect scores: 250 points
+    - 10 perfect scores: 750 points
+  </Accordion>
+  
+  <Accordion title="Knowledge Builder">
+    Master a certain number of concepts
+    - 10 concepts: 100 points
+    - 25 concepts: 300 points
+    - 50 concepts: 750 points
+  </Accordion>
+  
+  <Accordion title="Rapid Learner">
+    Complete lessons quickly without sacrificing accuracy
+    - First fast completion: 100 points
+    - 5 fast completions: 300 points
+  </Accordion>
+</AccordionGroup>
+
+## Implementation Example
+
+Here's how to add a new achievement:
+
+```typescript
+// 1. Define the achievement check
+if (lessonHistory.filter(l => l.status === "DONE").length === 10) {
+  achievements.push({
+    type: "TEN_LESSONS",
+    payload: {
+      title: "Dedicated Learner",
+      description: "Completed 10 lessons!",
+      icon: "medal"
+    }
+  });
+}
+
+// 2. Award bonus points
+await pointsService.awardPoints({
+  learnerId: learner.id,
+  amount: 350,
+  sourceType: 'ACHIEVEMENT',
+  sourceId: 'TEN_LESSONS',
+  description: 'Achievement unlocked: Dedicated Learner'
+});
+
+// 3. Save to learner profile
+profile.achievements.push(achievement);
+profile.achievementDates['TEN_LESSONS'] = new Date();
+await updateLearnerProfile(profile);
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Clear Criteria" icon="list-check">
+    Achievement requirements should be crystal clear and easy to verify
+  </Card>
+  <Card title="Attainable Goals" icon="target">
+    Balance challenge with achievability — make milestones motivating, not discouraging
+  </Card>
+  <Card title="Progressive Difficulty" icon="stairs">
+    Start with easy achievements, then introduce harder ones
+  </Card>
+  <Card title="Meaningful Rewards" icon="gift">
+    Point rewards should reflect the difficulty and importance of the achievement
+  </Card>
+</CardGroup>
+
+## Parent Dashboard
+
+Parents can view all achievements their learner has earned:
+
+- **Achievement Gallery**: Visual display of all earned badges
+- **Progress Tracking**: Shows which milestones are close to unlocking
+- **Timeline**: When each achievement was earned
+- **Point Breakdown**: How much each achievement contributed
+
+## Related Features
+
+<CardGroup cols={3}>
+  <Card title="Points System" icon="coins" href="/features/points-system">
+    How achievement points are awarded and tracked
+  </Card>
+  <Card title="Reports" icon="chart-bar" href="/features/reports">
+    View achievement progress in analytics
+  </Card>
+  <Card title="Rewards" icon="gift" href="/features/rewards">
+    Spend achievement points on real rewards
+  </Card>
+</CardGroup>
