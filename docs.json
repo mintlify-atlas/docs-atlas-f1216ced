@@ -101,7 +101,7 @@
           },
           {
             "group": "Analytics",
-            "pages": ["api/progress", "api/reports", "api/export"]
+            "pages": ["api/progress", "api/reports", "api/export", "api/sync-configs"]
           }
         ]
       },

@@ -1,0 +1,278 @@
+---
+title: 'Database Sync'
+description: 'Configure external database synchronization for data backup'
+icon: 'database'
+---
+
+## List Sync Configurations
+
+<Note>
+  **Authentication Required:** PARENT role
+</Note>
+
+```bash GET /api/sync-configs
+curl -X GET https://api.sunschool.xyz/api/sync-configs \
+  -H "Authorization: Bearer {token}"
+```
+
+Returns all sync configurations for the authenticated parent.
+
+### Response
+
+```json Response Example
+[
+  {
+    "id": "sync_abc123",
+    "parentId": "5",
+    "targetDbUrl": "postgresql://user:pass@host:5432/backup",
+    "continuousSync": false,
+    "syncStatus": "IDLE",
+    "lastSyncAt": "2024-03-12T10:30:00Z",
+    "errorMessage": null
+  }
+]
+```
+
+<ResponseField name="id" type="string">
+  Unique sync configuration ID
+</ResponseField>
+
+<ResponseField name="parentId" type="string">
+  Parent user ID who owns this configuration
+</ResponseField>
+
+<ResponseField name="targetDbUrl" type="string">
+  PostgreSQL connection string for the external database
+</ResponseField>
+
+<ResponseField name="continuousSync" type="boolean">
+  Whether continuous sync is enabled
+</ResponseField>
+
+<ResponseField name="syncStatus" type="enum">
+  Current sync status: `IDLE`, `IN_PROGRESS`, `COMPLETED`, or `FAILED`
+</ResponseField>
+
+<ResponseField name="lastSyncAt" type="string">
+  Timestamp of last successful sync (ISO 8601)
+</ResponseField>
+
+<ResponseField name="errorMessage" type="string | null">
+  Error message if last sync failed
+</ResponseField>
+
+---
+
+## Get Sync Configuration
+
+<Note>
+  **Authentication Required:** PARENT role (must own the configuration)
+</Note>
+
+```bash GET /api/sync-configs/:id
+curl -X GET https://api.sunschool.xyz/api/sync-configs/sync_abc123 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="id" type="string" required>
+  Sync configuration ID
+</ParamField>
+
+### Response
+
+Returns the sync configuration object (same format as list endpoint).
+
+### Error Codes
+
+- `404` - Sync configuration not found
+- `403` - Forbidden (configuration belongs to another parent)
+
+---
+
+## Create Sync Configuration
+
+<Note>
+  **Authentication Required:** PARENT role
+</Note>
+
+```bash POST /api/sync-configs
+curl -X POST https://api.sunschool.xyz/api/sync-configs \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetDbUrl": "postgresql://user:password@hostname:5432/database",
+    "continuousSync": false
+  }'
+```
+
+<ParamField body="targetDbUrl" type="string" required>
+  PostgreSQL connection string for the target database
+  
+  **Format:** `postgresql://username:password@hostname:port/database`
+  
+  Must match the regex: `^postgresql:\/\/\w+:.*@[\w.-]+:\d+\/\w+(\?.*)?$`
+</ParamField>
+
+<ParamField body="continuousSync" type="boolean" default={false}>
+  Enable continuous synchronization (syncs on every data change)
+</ParamField>
+
+### Response
+
+```json Response 201
+{
+  "id": "sync_xyz789",
+  "parentId": "5",
+  "targetDbUrl": "postgresql://user:pass@hostname:5432/database",
+  "continuousSync": false,
+  "syncStatus": "IDLE",
+  "lastSyncAt": null,
+  "errorMessage": null
+}
+```
+
+### Error Codes
+
+- `400` - Missing required field or invalid connection string format
+- `500` - Failed to create sync configuration
+
+---
+
+## Update Sync Configuration
+
+<Note>
+  **Authentication Required:** PARENT role (must own the configuration)
+</Note>
+
+```bash PUT /api/sync-configs/:id
+curl -X PUT https://api.sunschool.xyz/api/sync-configs/sync_abc123 \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetDbUrl": "postgresql://newuser:newpass@hostname:5432/database",
+    "continuousSync": true
+  }'
+```
+
+<ParamField path="id" type="string" required>
+  Sync configuration ID
+</ParamField>
+
+<ParamField body="targetDbUrl" type="string">
+  New PostgreSQL connection string (optional)
+</ParamField>
+
+<ParamField body="continuousSync" type="boolean">
+  Update continuous sync setting (optional)
+</ParamField>
+
+### Response
+
+Returns the updated sync configuration object.
+
+### Error Codes
+
+- `400` - Invalid connection string format
+- `404` - Sync configuration not found
+- `403` - Forbidden (configuration belongs to another parent)
+
+---
+
+## Delete Sync Configuration
+
+<Note>
+  **Authentication Required:** PARENT role (must own the configuration)
+</Note>
+
+```bash DELETE /api/sync-configs/:id
+curl -X DELETE https://api.sunschool.xyz/api/sync-configs/sync_abc123 \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="id" type="string" required>
+  Sync configuration ID
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success.
+
+### Error Codes
+
+- `404` - Sync configuration not found
+- `403` - Forbidden (configuration belongs to another parent)
+- `500` - Failed to delete configuration
+
+---
+
+## Trigger Manual Sync
+
+<Note>
+  **Authentication Required:** PARENT role (must own the configuration)
+</Note>
+
+```bash POST /api/sync-configs/:id/push
+curl -X POST https://api.sunschool.xyz/api/sync-configs/sync_abc123/push \
+  -H "Authorization: Bearer {token}"
+```
+
+<ParamField path="id" type="string" required>
+  Sync configuration ID
+</ParamField>
+
+Initiates a one-time synchronization to push all learner data to the external database.
+
+### Response
+
+```json Response 200
+{
+  "message": "Synchronization initiated",
+  "syncStatus": "IN_PROGRESS"
+}
+```
+
+The sync runs in the background. Check the sync configuration status to monitor progress.
+
+### What Gets Synced
+
+- User records (parents and learners)
+- Learner profiles
+- Lessons and quiz answers
+- Points ledger and achievements
+- Rewards and redemptions
+
+### Error Codes
+
+- `404` - Sync configuration not found
+- `403` - Forbidden (configuration belongs to another parent)
+- `500` - Sync already in progress or connection failed
+
+---
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Data Backup">
+    Configure a sync to your own PostgreSQL database for complete data ownership and backup. Run manual syncs on a schedule (daily, weekly) or enable continuous sync for real-time backup.
+  </Accordion>
+  
+  <Accordion title="Data Portability">
+    Export all your family's learning data to your own database before canceling service. The sync includes all lessons, progress, achievements, and points history.
+  </Accordion>
+  
+  <Accordion title="Custom Analytics">
+    Sync data to your own database to run custom SQL queries, build dashboards, or integrate with other tools. All data is in standard PostgreSQL format.
+  </Accordion>
+  
+  <Accordion title="Multi-Instance Setup">
+    Sync data between a production Sunschool instance and a test/development instance for experimentation without affecting live data.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  **Security:** Store connection strings securely. They contain database credentials with write access. Never share sync configurations or expose connection strings in client-side code.
+</Warning>
+
+<Tip>
+  **Testing:** Test your sync configuration with a non-production database first. Verify that the target database has the correct schema (run migrations) before syncing.
+</Tip>
